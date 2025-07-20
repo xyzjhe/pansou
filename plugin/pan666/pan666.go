@@ -75,7 +75,10 @@ func (p *Pan666AsyncPlugin) doSearch(client *http.Client, keyword string) ([]mod
 	// 去重
 	uniqueResults := p.deduplicateResults(allResults)
 	
-	return uniqueResults, nil
+	// 使用过滤功能过滤结果
+	filteredResults := p.FilterResultsByKeyword(uniqueResults, keyword)
+	
+	return filteredResults, nil
 }
 
 // fetchBatch 获取一批页面的数据
