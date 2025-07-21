@@ -1,9 +1,9 @@
 package service
 
 import (
-	"context" // Added for context.WithTimeout
+	"context"
 	"io/ioutil"
-	"net/http" // Added for http.Client
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +14,7 @@ import (
 	"pansou/util"
 	"pansou/util/cache"
 	"pansou/util/pool"
-	"sync" // Added for sync.WaitGroup
+	"sync"
 )
 
 // 优先关键词列表
