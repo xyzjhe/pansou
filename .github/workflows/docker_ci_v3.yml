@@ -1,22 +1,13 @@
 name: 构建并发布Docker镜像V3
 
 on:
-  push:
-    branches:
-      - "main"
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-  pull_request:
-    branches:
-      - "main"
   workflow_dispatch:
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # 必须是 write，才能创建 Release
       packages: write
     steps:
       - name: 检出代码
@@ -84,20 +75,23 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ steps.meta.outputs.version }}
 
-      # --- 新增：打包并发布到 Release ---
+      # --- 新增：生成日期型 tag_name 和 zip_name ---
+      - name: 生成日期型 tag_name 和 zip_name
+        run: |
+          echo "TAG_NAME=release-$(date +%Y%m%d)" >> $GITHUB_ENV
+          echo "ZIP_NAME=pansou_$(date +%Y%m%d).zip" >> $GITHUB_ENV
+
       - name: 打包编译文件带日期
         run: |
           cd dist
-          ZIP_NAME="pansou_$(date +%Y%m%d).zip"
-          zip "$ZIP_NAME" pansou
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          zip "${ZIP_NAME}" pansou
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
         if: github.event_name != 'pull_request'
         with:
-          tag_name: "release-$(date +%Y%m%d)"
-          name: "Release $(date +%Y%m%d)"
+          tag_name: ${{ env.TAG_NAME }}
+          name: "Release ${{ env.TAG_NAME }}"
           body: "自动发布：包含当天编译的 pansou 文件"
           files: dist/${{ env.ZIP_NAME }}
         env:
