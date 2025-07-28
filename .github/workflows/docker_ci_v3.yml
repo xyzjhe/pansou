@@ -49,10 +49,15 @@ jobs:
         with:
           go-version: '1.23' # 与 Dockerfile 保持一致
 
-      - name: 编译项目到 dist 目录
+      # 分别编译两个架构的可执行文件
+      - name: 编译 amd64 版本
         run: |
           mkdir -p dist
-          go build -o dist/pansou .
+          GOOS=linux GOARCH=amd64 go build -o dist/pansou_amd64 .
+
+      - name: 编译 arm64 版本
+        run: |
+          GOOS=linux GOARCH=arm64 go build -o dist/pansou_arm64 .
 
       - name: 上传 dist 目录
         uses: actions/upload-artifact@v4
@@ -81,10 +86,11 @@ jobs:
           echo "TAG_NAME=release-$(date +%Y%m%d)" >> $GITHUB_ENV
           echo "ZIP_NAME=pansou_$(date +%Y%m%d).zip" >> $GITHUB_ENV
 
-      - name: 打包编译文件带日期
+      # 压缩两个平台的可执行文件
+      - name: 打包两个平台文件带日期
         run: |
           cd dist
-          zip "${ZIP_NAME}" pansou
+          zip "${ZIP_NAME}" pansou_amd64 pansou_arm64
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
@@ -92,7 +98,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: "Release ${{ env.TAG_NAME }}"
-          body: "自动发布：包含当天编译的 pansou 文件"
+          body: "自动发布：包含当天编译的 pansou_amd64 和 pansou_arm64 文件"
           files: dist/${{ env.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
