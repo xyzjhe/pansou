@@ -28,7 +28,7 @@ import (
 	_ "pansou/plugin/hdr4k"
 	_ "pansou/plugin/hunhepan"
 	_ "pansou/plugin/jikepan"
-	_ "pansou/plugin/pan666"
+	_ "pansou/plugin/panwiki"
 	_ "pansou/plugin/pansearch"
 	_ "pansou/plugin/panta"
 	_ "pansou/plugin/qupansou"
@@ -52,6 +52,7 @@ import (
 	_ "pansou/plugin/clmao"
 	_ "pansou/plugin/wuji"
 	_ "pansou/plugin/cldi"
+	_ "pansou/plugin/xiaozhang"
 )
 
 // 全局缓存写入管理器
