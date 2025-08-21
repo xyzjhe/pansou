@@ -33,6 +33,7 @@ type Config struct {
 	PluginTimeout        time.Duration // 插件超时时间（Duration）
 	// 异步插件相关配置
 	AsyncPluginEnabled        bool          // 是否启用异步插件
+	EnabledPlugins            []string      // 启用的具体插件列表（空表示启用所有）
 	AsyncResponseTimeout      int           // 响应超时时间（秒）
 	AsyncResponseTimeoutDur   time.Duration // 响应超时时间（Duration）
 	AsyncMaxBackgroundWorkers int           // 最大后台工作者数量
@@ -78,6 +79,7 @@ func Init() {
 		PluginTimeout:        time.Duration(pluginTimeoutSeconds) * time.Second,
 		// 异步插件相关配置
 		AsyncPluginEnabled:        getAsyncPluginEnabled(),
+		EnabledPlugins:            getEnabledPlugins(),
 		AsyncResponseTimeout:      asyncResponseTimeoutSeconds,
 		AsyncResponseTimeoutDur:   time.Duration(asyncResponseTimeoutSeconds) * time.Second,
 		AsyncMaxBackgroundWorkers: getAsyncMaxBackgroundWorkers(),
@@ -143,7 +145,8 @@ func getDefaultConcurrency() int {
 	return concurrency
 }
 
-// 更新默认并发数（在真实插件数已知时调用）
+// 更新默认并发数（根据实际插件数或0调用）
+// pluginCount: 如果插件被禁用则为0，否则为实际插件数
 func UpdateDefaultConcurrency(pluginCount int) {
 	if AppConfig == nil {
 		return
@@ -158,7 +161,7 @@ func UpdateDefaultConcurrency(pluginCount int) {
 	// 计算频道数
 	channelCount := len(AppConfig.DefaultChannels)
 	
-	// 计算并发数 = 频道数 + 实际插件数 + 10
+	// 计算并发数 = 频道数 + 插件数（插件禁用时为0）+ 10
 	concurrency := channelCount + pluginCount + 10
 	if concurrency < 1 {
 		concurrency = 1 // 确保至少为1
@@ -295,6 +298,25 @@ func getAsyncPluginEnabled() bool {
 		return true // 默认启用
 	}
 	return enabled != "false" && enabled != "0"
+}
+
+// 从环境变量获取启用的插件列表，如果未设置则返回空切片（表示启用所有）
+func getEnabledPlugins() []string {
+	plugins := os.Getenv("ENABLED_PLUGINS")
+	if plugins == "" {
+		return []string{} // 空切片表示启用所有插件
+	}
+	
+	// 按逗号分割插件名
+	result := make([]string, 0)
+	for _, plugin := range strings.Split(plugins, ",") {
+		plugin = strings.TrimSpace(plugin)
+		if plugin != "" {
+			result = append(result, plugin)
+		}
+	}
+	
+	return result
 }
 
 // 从环境变量获取异步响应超时时间（秒），如果未设置则使用默认值
