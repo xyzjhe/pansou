@@ -53,6 +53,7 @@ import (
 	_ "pansou/plugin/wuji"
 	_ "pansou/plugin/cldi"
 	_ "pansou/plugin/xiaozhang"
+	_ "pansou/plugin/libvio"
 )
 
 // 全局缓存写入管理器
