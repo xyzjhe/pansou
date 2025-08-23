@@ -55,6 +55,7 @@ import (
 	_ "pansou/plugin/xiaozhang"
 	_ "pansou/plugin/libvio"
 	_ "pansou/plugin/leijing"
+	_ "pansou/plugin/xb6v"
 )
 
 // 全局缓存写入管理器
