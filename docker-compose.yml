@@ -9,7 +9,7 @@ services:
       - "8888:8888"
     environment:
       - PORT=8888
-      - CHANNELS=tgsearchers3,SharePanBaidu,yunpanxunlei,tianyifc,BaiduCloudDisk
+      - CHANNELS=tgsearchers3,BaiduCloudDisk,bdwpzhpd,SharePanBaidu,share_pan,Lsp115,QukanMovie,shares_115,Channel_Shares_115,yunpanuc,alyp_1,alyp_TV,alyp_JLP,alyp_4K_Movies,alyp_Animation,Quark_Movies,NewQuark,yunpanqk,PanjClub,jdjdn1111,MCPH01,shareAliyun,Aliyun_4K_Movies,zaihuayun,NewAliPan,yp123pan,xx123pan,zyfb123,zyzhpd123,xx123pan1,yingshifenxiang123,cloud189_group,tyypzhpd,tianyirigeng,cloudtianyi,ydypzyfx,yunpan139,yunpansall,yppshare,leopansou,KFCYeah,leoziyuan,tgsearchers2,xunleiyunpan,taoxgzy,ResourceUniverse,Aliyun_4K_Movies,Oscar_4Kmovies,vip115hot,yggpan,ucquark,yunpanxunlei,xlshare,peccxin,peccxinpd,BaiduCloudDiskchat,MCPH086,kuakeclound,Q66Share
       - CACHE_ENABLED=true
       - CACHE_PATH=/app/cache
       - CACHE_MAX_SIZE=100
