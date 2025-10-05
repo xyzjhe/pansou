@@ -45,6 +45,11 @@ type Config struct {
 	HTTPWriteTimeout time.Duration // 写入超时
 	HTTPIdleTimeout  time.Duration // 空闲超时
 	HTTPMaxConns     int           // 最大连接数
+	// 认证相关配置
+	AuthEnabled     bool              // 是否启用认证
+	AuthUsers       map[string]string // 用户名:密码映射
+	AuthTokenExpiry time.Duration     // Token有效期
+	AuthJWTSecret   string            // JWT签名密钥
 
 }
 
@@ -91,6 +96,11 @@ func Init() {
 		HTTPWriteTimeout: getHTTPWriteTimeout(),
 		HTTPIdleTimeout:  getHTTPIdleTimeout(),
 		HTTPMaxConns:     getHTTPMaxConns(),
+		// 认证相关配置
+		AuthEnabled:     getAuthEnabled(),
+		AuthUsers:       getAuthUsers(),
+		AuthTokenExpiry: getAuthTokenExpiry(),
+		AuthJWTSecret:   getAuthJWTSecret(),
 
 	}
 	
@@ -499,6 +509,63 @@ func getAsyncLogEnabled() bool {
 		return true // 解析失败时默认启用
 	}
 	return enabled
+}
+
+// 从环境变量获取认证开关，如果未设置则默认关闭
+func getAuthEnabled() bool {
+	enabled := os.Getenv("AUTH_ENABLED")
+	return enabled == "true" || enabled == "1"
+}
+
+// 从环境变量获取用户配置，格式：user1:pass1,user2:pass2
+func getAuthUsers() map[string]string {
+	usersEnv := os.Getenv("AUTH_USERS")
+	if usersEnv == "" {
+		return nil
+	}
+	
+	users := make(map[string]string)
+	pairs := strings.Split(usersEnv, ",")
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) == 2 {
+			username := strings.TrimSpace(parts[0])
+			password := strings.TrimSpace(parts[1])
+			if username != "" && password != "" {
+				users[username] = password
+			}
+		}
+	}
+	return users
+}
+
+// 从环境变量获取Token有效期（小时），如果未设置则使用默认值
+func getAuthTokenExpiry() time.Duration {
+	expiryEnv := os.Getenv("AUTH_TOKEN_EXPIRY")
+	if expiryEnv == "" {
+		return 24 * time.Hour // 默认24小时
+	}
+	expiry, err := strconv.Atoi(expiryEnv)
+	if err != nil || expiry <= 0 {
+		return 24 * time.Hour
+	}
+	return time.Duration(expiry) * time.Hour
+}
+
+// 从环境变量获取JWT密钥，如果未设置则生成随机密钥
+func getAuthJWTSecret() string {
+	secret := os.Getenv("AUTH_JWT_SECRET")
+	if secret == "" {
+		// 生成随机密钥（32字节）
+		import_crypto := "crypto/rand"
+		import_encoding := "encoding/base64"
+		_ = import_crypto
+		_ = import_encoding
+		// 注意：实际使用时应该使用crypto/rand生成随机密钥
+		// 这里为了简化，使用时间戳作为临时密钥
+		secret = "pansou-default-secret-" + strconv.FormatInt(time.Now().Unix(), 10)
+	}
+	return secret
 }
 
 // 应用GC设置

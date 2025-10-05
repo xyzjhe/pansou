@@ -52,6 +52,7 @@ EXPOSE 8888
 
 # 设置环境变量
 # ENABLED_PLUGINS: 必须指定启用的插件，多个插件用逗号分隔
+# AUTH_ENABLED: 认证功能默认关闭，可通过环境变量启用
 ENV CACHE_PATH=/app/cache \
     CACHE_ENABLED=true \
     TZ=Asia/Shanghai \
@@ -60,7 +61,9 @@ ENV CACHE_PATH=/app/cache \
     ASYNC_MAX_BACKGROUND_WORKERS=20 \
     ASYNC_MAX_BACKGROUND_TASKS=100 \
     ASYNC_CACHE_TTL_HOURS=1 \
-    ENABLED_PLUGINS=labi,zhizhen,shandian,duoduo,muou,wanou
+    ENABLED_PLUGINS=labi,zhizhen,shandian,duoduo,muou,wanou \
+    AUTH_ENABLED=false \
+    AUTH_TOKEN_EXPIRY=24
 
 # 构建参数
 ARG VERSION=dev

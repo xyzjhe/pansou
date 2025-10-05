@@ -106,6 +106,56 @@ cd pansou
 | **CHANNELS** | 默认搜索的TG频道 | `tgsearchers3` | 多个频道用逗号分隔 |
 | **ENABLED_PLUGINS** | 指定启用插件，多个插件用逗号分隔 | 无 | 必须显式指定 |
 
+#### 认证配置（可选）
+
+PanSou支持可选的安全认证功能，默认关闭。开启后，所有API接口（除登录接口外）都需要提供有效的JWT Token。详见[认证系统设计文档](docs/认证系统设计.md)。
+
+| 环境变量 | 描述 | 默认值 | 说明 |
+|----------|------|--------|------|
+| **AUTH_ENABLED** | 是否启用认证 | `false` | 设置为`true`启用认证功能 |
+| **AUTH_USERS** | 用户账号配置 | 无 | 格式：`user1:pass1,user2:pass2` |
+| **AUTH_TOKEN_EXPIRY** | Token有效期（小时） | `24` | JWT Token的有效时长 |
+| **AUTH_JWT_SECRET** | JWT签名密钥 | 自动生成 | 用于签名Token，建议手动设置 |
+
+**认证配置示例：**
+
+```bash
+# 启用认证并配置单个用户
+docker run -d --name pansou -p 8888:8888 \
+  -e AUTH_ENABLED=true \
+  -e AUTH_USERS=admin:admin123 \
+  -e AUTH_TOKEN_EXPIRY=24 \
+  ghcr.io/fish2018/pansou:latest
+
+# 配置多个用户
+docker run -d --name pansou -p 8888:8888 \
+  -e AUTH_ENABLED=true \
+  -e AUTH_USERS=admin:pass123,user1:pass456,user2:pass789 \
+  ghcr.io/fish2018/pansou:latest
+```
+
+**认证API接口：**
+
+- `POST /api/auth/login` - 用户登录，获取Token
+- `POST /api/auth/verify` - 验证Token有效性
+- `POST /api/auth/logout` - 退出登录（客户端删除Token）
+
+**使用Token调用API：**
+
+```bash
+# 1. 登录获取Token
+curl -X POST http://localhost:8888/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+
+# 响应：{"token":"eyJhbGc...","expires_at":1234567890,"username":"admin"}
+
+# 2. 使用Token调用搜索API
+curl -X POST http://localhost:8888/api/search \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{"kw":"速度与激情"}'
+```
 
 #### 高级配置（默认值即可）
 

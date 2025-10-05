@@ -200,7 +200,7 @@ func SearchHandler(c *gin.Context) {
 		return
 	}
 
-	// 返回结果
+	// 包装SearchResponse到标准响应格式中
 	response := model.NewSuccessResponse(result)
 	jsonData, _ := jsonutil.Marshal(response)
 	c.Data(http.StatusOK, "application/json", jsonData)
