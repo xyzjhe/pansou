@@ -22,10 +22,19 @@ func SetupRouter(searchService *service.SearchService) *gin.Engine {
 	r.Use(CORSMiddleware())
 	r.Use(LoggerMiddleware())
 	r.Use(util.GzipMiddleware()) // 添加压缩中间件
+	r.Use(AuthMiddleware())      // 添加认证中间件
 	
 	// 定义API路由组
 	api := r.Group("/api")
 	{
+		// 认证接口（不需要认证，由中间件公开路径处理）
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", LoginHandler)
+			auth.POST("/verify", VerifyHandler)
+			auth.POST("/logout", LogoutHandler)
+		}
+		
 		// 搜索接口 - 支持POST和GET两种方式
 		api.POST("/search", SearchHandler)
 		api.GET("/search", SearchHandler) // 添加GET方式支持
@@ -50,10 +59,11 @@ func SetupRouter(searchService *service.SearchService) *gin.Engine {
 			channelsCount := len(channels)
 			
 			response := gin.H{
-				"status": "ok",
+				"status":         "ok",
+				"auth_enabled":   config.AppConfig.AuthEnabled, // 添加认证状态
 				"plugins_enabled": pluginsEnabled,
-				"channels": channels,
-				"channels_count": channelsCount,
+				"channels":        channels,
+				"channels_count":  channelsCount,
 			}
 			
 			// 只有当插件启用时才返回插件相关信息

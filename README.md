@@ -106,6 +106,56 @@ cd pansou
 | **CHANNELS** | 默认搜索的TG频道 | `tgsearchers3` | 多个频道用逗号分隔 |
 | **ENABLED_PLUGINS** | 指定启用插件，多个插件用逗号分隔 | 无 | 必须显式指定 |
 
+#### 认证配置（可选）
+
+PanSou支持可选的安全认证功能，默认关闭。开启后，所有API接口（除登录接口外）都需要提供有效的JWT Token。详见[认证系统设计文档](docs/认证系统设计.md)。
+
+| 环境变量 | 描述 | 默认值 | 说明 |
+|----------|------|--------|------|
+| **AUTH_ENABLED** | 是否启用认证 | `false` | 设置为`true`启用认证功能 |
+| **AUTH_USERS** | 用户账号配置 | 无 | 格式：`user1:pass1,user2:pass2` |
+| **AUTH_TOKEN_EXPIRY** | Token有效期（小时） | `24` | JWT Token的有效时长 |
+| **AUTH_JWT_SECRET** | JWT签名密钥 | 自动生成 | 用于签名Token，建议手动设置 |
+
+**认证配置示例：**
+
+```bash
+# 启用认证并配置单个用户
+docker run -d --name pansou -p 8888:8888 \
+  -e AUTH_ENABLED=true \
+  -e AUTH_USERS=admin:admin123 \
+  -e AUTH_TOKEN_EXPIRY=24 \
+  ghcr.io/fish2018/pansou:latest
+
+# 配置多个用户
+docker run -d --name pansou -p 8888:8888 \
+  -e AUTH_ENABLED=true \
+  -e AUTH_USERS=admin:pass123,user1:pass456,user2:pass789 \
+  ghcr.io/fish2018/pansou:latest
+```
+
+**认证API接口：**
+
+- `POST /api/auth/login` - 用户登录，获取Token
+- `POST /api/auth/verify` - 验证Token有效性
+- `POST /api/auth/logout` - 退出登录（客户端删除Token）
+
+**使用Token调用API：**
+
+```bash
+# 1. 登录获取Token
+curl -X POST http://localhost:8888/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+
+# 响应：{"token":"eyJhbGc...","expires_at":1234567890,"username":"admin"}
+
+# 2. 使用Token调用搜索API
+curl -X POST http://localhost:8888/api/search \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{"kw":"速度与激情"}'
+```
 
 #### 高级配置（默认值即可）
 
@@ -220,13 +270,126 @@ server {
 
 ## API文档
 
+### 认证说明
+
+当启用认证功能（`AUTH_ENABLED=true`）时，除登录和健康检测接口外的所有API接口都需要提供有效的JWT Token。
+
+**请求头格式**：
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+**获取Token**：
+
+1. 调用登录接口获取Token（详见下方[认证API](#认证API)）
+2. 在后续所有API请求的Header中添加`Authorization: Bearer <token>`
+3. Token过期后需要重新登录获取新Token
+
+**示例**：
+```bash
+# 未启用认证时
+curl -X POST http://localhost:8888/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"kw":"速度与激情"}'
+
+# 启用认证时
+curl -X POST http://localhost:8888/api/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -d '{"kw":"速度与激情"}'
+```
+
+### 认证API
+
+#### 用户登录
+
+获取JWT Token用于后续API调用。
+
+**接口地址**：`/api/auth/login`  
+**请求方法**：`POST`  
+**Content-Type**：`application/json`  
+**是否需要认证**：否
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| username | string | 是 | 用户名 |
+| password | string | 是 | 密码 |
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8888/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+```
+
+**成功响应**：
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_at": 1234567890,
+  "username": "admin"
+}
+```
+
+**错误响应**：
+```json
+{
+  "error": "用户名或密码错误"
+}
+```
+
+#### 验证Token
+
+验证当前Token是否有效。
+
+**接口地址**：`/api/auth/verify`  
+**请求方法**：`POST`  
+**是否需要认证**：是
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8888/api/auth/verify \
+  -H "Authorization: Bearer eyJhbGc..."
+```
+
+**成功响应**：
+```json
+{
+  "valid": true,
+  "username": "admin"
+}
+```
+
+#### 退出登录
+
+退出当前登录（客户端删除Token即可）。
+
+**接口地址**：`/api/auth/logout`  
+**请求方法**：`POST`  
+**是否需要认证**：否
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8888/api/auth/logout
+```
+
+**成功响应**：
+```json
+{
+  "message": "退出成功"
+}
+```
+
 ### 搜索API
 
 搜索网盘资源。
 
 **接口地址**：`/api/search`  
 **请求方法**：`POST` 或 `GET`  
-**Content-Type**：`application/json`（POST方法）
+**Content-Type**：`application/json`（POST方法）  
+**是否需要认证**：取决于`AUTH_ENABLED`配置
 
 **POST请求参数**：
 
@@ -258,27 +421,44 @@ server {
 
 **POST请求示例**：
 
-```json
-{
-  "kw": "速度与激情",
-  "channels": ["tgsearchers3", "xxx"],
-  "conc": 2,
-  "refresh": true,
-  "res": "merge",
-  "src": "all",
-  "plugins": ["jikepan"],
-  "cloud_types": ["baidu", "quark"],
-  "ext": {
-    "title_en": "Fast and Furious",
-    "is_all": true
-  }
-}
+```bash
+# 未启用认证
+curl -X POST http://localhost:8888/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kw": "速度与激情",
+    "channels": ["tgsearchers3", "xxx"],
+    "conc": 2,
+    "refresh": true,
+    "res": "merge",
+    "src": "all",
+    "plugins": ["jikepan"],
+    "cloud_types": ["baidu", "quark"],
+    "ext": {
+      "title_en": "Fast and Furious",
+      "is_all": true
+    }
+  }'
+
+# 启用认证时（需要添加Authorization头）
+curl -X POST http://localhost:8888/api/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "kw": "速度与激情",
+    "res": "merge"
+  }'
 ```
 
 **GET请求示例**：
 
-```
-GET /api/search?kw=速度与激情&channels=tgsearchers3,xxx&conc=2&refresh=true&res=merge&src=tg&cloud_types=baidu,quark&ext={"title_en":"Fast and Furious","is_all":true}
+```bash
+# 未启用认证
+curl "http://localhost:8888/api/search?kw=速度与激情&res=merge&src=tg"
+
+# 启用认证时（需要添加Authorization头）
+curl "http://localhost:8888/api/search?kw=速度与激情&res=merge" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
 **成功响应**：
@@ -353,9 +533,22 @@ GET /api/search?kw=速度与激情&channels=tgsearchers3,xxx&conc=2&refresh=true
 **错误响应**：
 
 ```json
+// 参数错误
 {
   "code": 400,
   "message": "关键词不能为空"
+}
+
+// 未授权（启用认证但未提供Token）
+{
+  "error": "未授权：缺少认证令牌",
+  "code": "AUTH_TOKEN_MISSING"
+}
+
+// Token无效或过期
+{
+  "error": "未授权：令牌无效或已过期",
+  "code": "AUTH_TOKEN_INVALID"
 }
 ```
 
@@ -364,16 +557,21 @@ GET /api/search?kw=速度与激情&channels=tgsearchers3,xxx&conc=2&refresh=true
 检查API服务是否正常运行。
 
 **接口地址**：`/api/health`  
-**请求方法**：`GET`
+**请求方法**：`GET`  
+**是否需要认证**：否（公开接口）
+
+**请求示例**：
+```bash
+curl http://localhost:8888/api/health
+```
 
 **成功响应**：
 
 ```json
 {
-  "channels_count": 1,
-  "channels": [
-    "tgsearchers3"
-  ],
+  "status": "ok",
+  "auth_enabled": true,
+  "plugins_enabled": true,
   "plugin_count": 16,
   "plugins": [
     "pansearch",
@@ -395,10 +593,21 @@ GET /api/search?kw=速度与激情&channels=tgsearchers3,xxx&conc=2&refresh=true
     "zhizhen",
     "huban"
   ],
-  "plugins_enabled": true,
-  "status": "ok"
+  "channels_count": 1,
+  "channels": [
+    "tgsearchers3"
+  ]
 }
 ```
+
+**字段说明**：
+- `status`: 服务状态，"ok"表示正常
+- `auth_enabled`: 是否启用认证功能
+- `plugins_enabled`: 是否启用插件
+- `plugin_count`: 已启用的插件数量
+- `plugins`: 已启用的插件列表
+- `channels_count`: 配置的频道数量
+- `channels`: 配置的频道列表
 
 ## 📄 许可证
 
