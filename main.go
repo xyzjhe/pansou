@@ -70,6 +70,9 @@ import (
 	_ "pansou/plugin/xdyh"
 	_ "pansou/plugin/haisou"
 	_ "pansou/plugin/bixin"
+	_ "pansou/plugin/nyaa"
+	_ "pansou/plugin/djgou"
+	_ "pansou/plugin/xinjuc"
 )
 
 // 全局缓存写入管理器
