@@ -27,7 +27,9 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 本项目，并点上 Star !!!
 
 ### 使用Docker部署
+[常见问题总结](https://github.com/fish2018/pansou/issues/46)  
 
+[TG资源频道列表](https://github.com/fish2018/pansou/issues/4)
 <details>
 <summary>插件列表（请务必按需加载）</summary>
 <pre>
