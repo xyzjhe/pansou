@@ -75,7 +75,7 @@ import (
 	_ "pansou/plugin/xinjuc"
 	_ "pansou/plugin/aikanzy"
 	_ "pansou/plugin/qupanshe"
-	
+	_ "pansou/plugin/xdpan"
 )
 
 // 全局缓存写入管理器
