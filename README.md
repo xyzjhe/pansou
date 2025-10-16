@@ -34,7 +34,7 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 <summary>插件列表（请务必按需加载）</summary>
 <pre>
 export ENABLED_PLUGINS=hunhepan,jikepan,panwiki,pansearch,panta,qupansou,susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,sdso,xiaoji,xdyh,haisou,bixin,djgou,
-nyaa,xinjuc
+nyaa,xinjuc,aikanzy,qupanshe,xdpan
 </pre>
 </details>
 
