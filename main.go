@@ -74,6 +74,7 @@ import (
 	_ "pansou/plugin/djgou"
 	_ "pansou/plugin/xinjuc"
 	_ "pansou/plugin/aikanzy"
+	_ "pansou/plugin/qupanshe"
 	
 )
 
