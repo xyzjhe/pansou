@@ -39,7 +39,7 @@ const (
 	defaultTimeout    = 30 * time.Second
 	
 	// 多页获取配置
-	defaultMaxPages  = 2   // 默认最多获取2页
+	defaultMaxPages  = 1   // 默认最多获取1页
 	maxAllowedPages  = 10  // 最多允许获取10页
 	pageRequestDelay = 500 * time.Millisecond // 每页请求间隔
 )
