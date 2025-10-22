@@ -76,6 +76,7 @@ import (
 	_ "pansou/plugin/aikanzy"
 	_ "pansou/plugin/qupanshe"
 	_ "pansou/plugin/xdpan"
+	_ "pansou/plugin/discourse"
 	_ "pansou/plugin/yunsou"
 )
 
