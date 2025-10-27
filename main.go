@@ -79,6 +79,7 @@ import (
 	_ "pansou/plugin/discourse"
 	_ "pansou/plugin/yunsou"
 	_ "pansou/plugin/ahhhhfs"
+	_ "pansou/plugin/nsgame"
 )
 
 // 全局缓存写入管理器
