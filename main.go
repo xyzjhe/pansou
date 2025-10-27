@@ -78,6 +78,7 @@ import (
 	_ "pansou/plugin/xdpan"
 	_ "pansou/plugin/discourse"
 	_ "pansou/plugin/yunsou"
+	_ "pansou/plugin/ahhhhfs"
 )
 
 // 全局缓存写入管理器
