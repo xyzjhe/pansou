@@ -362,7 +362,7 @@ func (p *PanyqPlugin) doSearch(client *http.Client, keyword string, ext map[stri
 	}
 
 	// 使用关键词过滤结果
-	filteredResults := p.FilterResultsByKeyword(results, keyword)
+	filteredResults := plugin.FilterResultsByKeyword(results, keyword)
 
 	if DebugLog {
 		fmt.Println("panyq: returning", len(filteredResults), "filtered results")

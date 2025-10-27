@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"pansou/config"
+	"pansou/plugin"
 	"pansou/service"
 	"pansou/util"
 )
@@ -74,6 +75,14 @@ func SetupRouter(searchService *service.SearchService) *gin.Engine {
 			
 			c.JSON(200, response)
 		})
+	}
+	
+	// 注册插件的Web路由（如果插件实现了PluginWithWebHandler接口）
+	allPlugins := plugin.GetRegisteredPlugins()
+	for _, p := range allPlugins {
+		if webPlugin, ok := p.(plugin.PluginWithWebHandler); ok {
+			webPlugin.RegisterWebRoutes(r.Group(""))
+		}
 	}
 	
 	return r

@@ -84,7 +84,7 @@ func (p *BixinAsyncPlugin) doSearch(client *http.Client, keyword string, ext map
 	uniqueResults := p.deduplicateResults(allResults)
 	
 	// 使用过滤功能过滤结果
-	filteredResults := p.FilterResultsByKeyword(uniqueResults, keyword)
+	filteredResults := plugin.FilterResultsByKeyword(uniqueResults, keyword)
 	
 	return filteredResults, nil
 }
