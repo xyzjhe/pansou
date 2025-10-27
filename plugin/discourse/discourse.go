@@ -33,7 +33,8 @@ var (
 // 常量定义
 const (
 	pluginName        = "discourse"
-	searchURLTemplate = "https://linux.do/search.json?q=%s%%20%%23resource%%3Acloud-asset%%20in%%3Atitle&page=%d"
+	// searchURLTemplate = "https://linux.do/search.json?q=%s%%20%%23resource%%3Acloud-asset%%20in%%3Atitle&page=%d"
+	searchURLTemplate = "https://linux.do/search.json?q=%s%%20in%%3Atitle%%20%%23resource&page=%d"
 	detailURLTemplate = "https://linux.do/t/%d.json?track_visit=true&forceLoad=true"
 	defaultPriority   = 2
 	defaultTimeout    = 30 * time.Second

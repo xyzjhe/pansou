@@ -816,7 +816,12 @@ func extractLinkTitlePairsWithoutNewlines(content string) map[string]string {
 	
 	// 查找每个链接的位置，并提取链接前的文本作为段落
 	for i, link := range links {
-		pos := strings.Index(content[lastPos:], link) + lastPos
+		idx := strings.Index(content[lastPos:], link)
+		if idx == -1 {
+			// 链接在content中不存在，跳过
+			continue
+		}
+		pos := idx + lastPos
 		if pos > lastPos {
 			segments[i] = content[lastPos:pos]
 		}

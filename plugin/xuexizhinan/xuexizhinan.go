@@ -242,7 +242,7 @@ func (p *XuexizhinanPlugin) doSearch(client *http.Client, keyword string, ext ma
 	// 如果有结果，返回结果；如果没有结果，但有错误，返回第一个错误
 	if len(results) > 0 {
 		// 使用过滤功能过滤结果
-		filteredResults := p.FilterResultsByKeyword(results, keyword)
+		filteredResults := plugin.FilterResultsByKeyword(results, keyword)
 		
 		return filteredResults, nil
 	} else if len(errs) > 0 {
