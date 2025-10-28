@@ -30,6 +30,9 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 [常见问题总结](https://github.com/fish2018/pansou/issues/46)  
 
 [TG资源频道列表](https://github.com/fish2018/pansou/issues/4)
+
+[gying插件文档](https://github.com/fish2018/pansou/blob/main/plugin/gying/README.md)
+
 <details>
 <summary>插件列表（请务必按需加载）</summary>
 <pre>
@@ -38,7 +41,7 @@ susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,
 duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,
 libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,
 sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,
-discourse,yunsou,ahhhhfs,nsgame
+discourse,yunsou,ahhhhfs,nsgame,gying
 </pre>
 </details>
 
