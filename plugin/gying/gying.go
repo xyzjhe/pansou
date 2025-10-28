@@ -456,6 +456,9 @@ func init() {
 
 	// 启动定期清理任务
 	go p.startCleanupTask()
+	
+	// 启动session保活任务（防止session超时）
+	go p.startSessionKeepAlive()
 
 	plugin.RegisterGlobalPlugin(p)
 }
@@ -481,6 +484,10 @@ func (p *GyingPlugin) Search(keyword string, ext map[string]interface{}) ([]mode
 }
 
 // SearchWithResult 执行搜索并返回包含IsFinal标记的结果
+// 注意：gying插件不使用AsyncSearchWithResult的缓存机制，因为：
+// 1. 使用自己的cloudscraper实例而不是传入的http.Client
+// 2. 有自己的用户会话管理
+// 3. Service层已经有缓存，无需插件层再次缓存
 func (p *GyingPlugin) SearchWithResult(keyword string, ext map[string]interface{}) (model.PluginSearchResult, error) {
 	if DebugLog {
 		fmt.Printf("[Gying] ========== 开始搜索: %s ==========\n", keyword)
@@ -565,7 +572,9 @@ func (p *GyingPlugin) loadAllUsers() {
 
 // initDefaultAccounts 初始化所有账户（异步执行，不阻塞启动）
 // 包括：1. DefaultAccounts（代码配置）  2. 从文件加载的用户（使用加密密码重新登录）
-func (p *GyingPlugin) initDefaultAccounts() {	
+func (p *GyingPlugin) initDefaultAccounts() {
+	fmt.Printf("[Gying] ========== 异步初始化所有账户 ==========\n")
+	
 	// 步骤1：处理DefaultAccounts（代码中配置的默认账户）
 	for i, account := range DefaultAccounts {
 		if DebugLog {
@@ -604,6 +613,8 @@ func (p *GyingPlugin) initDefaultAccounts() {
 			p.initOrRestoreUser(user.Username, password, "restore")
 		}
 	}
+
+	fmt.Printf("[Gying] ========== 所有账户初始化完成 ==========\n")
 }
 
 // initOrRestoreUser 初始化或恢复单个用户（登录并保存）
@@ -902,8 +913,8 @@ func (p *GyingPlugin) handleTestSearch(c *gin.Context, hash string, reqData map[
 		return
 	}
 	
-	// 执行搜索
-	results, err := p.searchWithScraper(keyword, scraper)
+	// 执行搜索（带403自动重新登录）
+	results, err := p.searchWithScraperWithRetry(keyword, scraper, user)
 	if err != nil {
 		respondError(c, "搜索失败: "+err.Error())
 		return
@@ -1126,7 +1137,14 @@ func (p *GyingPlugin) doLogin(username, password string) (*cloudscraper.Scraper,
 	}
 
 	// 创建cloudscraper实例（每个用户独立的实例）
-	scraper, err := cloudscraper.New()
+	// 关键配置：禁用403自动刷新,防止cookie被清空
+	scraper, err := cloudscraper.New(
+		cloudscraper.WithSessionConfig(
+			false,              // refreshOn403 = false，禁用403时自动刷新（重要！）
+			365*24*time.Hour,   // interval = 1年，基本不刷新
+			0,                  // maxRetries = 0
+		),
+	)
 	if err != nil {
 		if DebugLog {
 			fmt.Printf("[Gying] 创建cloudscraper失败: %v\n", err)
@@ -1135,7 +1153,7 @@ func (p *GyingPlugin) doLogin(username, password string) (*cloudscraper.Scraper,
 	}
 
 	if DebugLog {
-		fmt.Printf("[Gying] cloudscraper创建成功\n")
+		fmt.Printf("[Gying] cloudscraper创建成功（已禁用403自动刷新）\n")
 	}
 
 	// 创建cookieMap用于收集所有cookies
@@ -1354,6 +1372,54 @@ func min(a, b int) int {
 	return b
 }
 
+// ============ 重新登录逻辑 ============
+
+// reloginUser 重新登录指定用户
+func (p *GyingPlugin) reloginUser(user *User) error {
+	if DebugLog {
+		fmt.Printf("[Gying] 🔄 开始重新登录用户: %s\n", user.UsernameMasked)
+	}
+	
+	// 解密密码
+	password, err := p.decryptPassword(user.EncryptedPassword)
+	if err != nil {
+		if DebugLog {
+			fmt.Printf("[Gying] ❌ 解密密码失败: %v\n", err)
+		}
+		return fmt.Errorf("解密密码失败: %w", err)
+	}
+	
+	// 执行登录
+	scraper, cookie, err := p.doLogin(user.Username, password)
+	if err != nil {
+		if DebugLog {
+			fmt.Printf("[Gying] ❌ 重新登录失败: %v\n", err)
+		}
+		return fmt.Errorf("重新登录失败: %w", err)
+	}
+	
+	// 更新scraper实例
+	p.scrapers.Store(user.Hash, scraper)
+	
+	// 更新用户信息
+	user.Cookie = cookie
+	user.LoginAt = time.Now()
+	user.ExpireAt = time.Now().AddDate(0, 4, 0)
+	user.Status = "active"
+	
+	if err := p.saveUser(user); err != nil {
+		if DebugLog {
+			fmt.Printf("[Gying] ⚠️  保存用户失败: %v\n", err)
+		}
+	}
+	
+	if DebugLog {
+		fmt.Printf("[Gying] ✅ 用户 %s 重新登录成功\n", user.UsernameMasked)
+	}
+	
+	return nil
+}
+
 // ============ 搜索逻辑 ============
 
 // executeSearchTasks 并发执行搜索任务
@@ -1376,8 +1442,8 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 					fmt.Printf("[Gying] 用户 %s 没有scraper实例，尝试使用已保存的cookie创建\n", u.UsernameMasked)
 				}
 				
-				// 为用户创建新的cloudscraper实例
-				newScraper, err := cloudscraper.New()
+				// 使用已保存的cookie创建scraper实例（关键！）
+				newScraper, err := p.createScraperWithCookies(u.Cookie)
 				if err != nil {
 					if DebugLog {
 						fmt.Printf("[Gying] 为用户 %s 创建scraper失败: %v\n", u.UsernameMasked, err)
@@ -1390,7 +1456,7 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 				scraper = newScraper
 				
 				if DebugLog {
-					fmt.Printf("[Gying] 已为用户 %s 创建新的scraper实例\n", u.UsernameMasked)
+					fmt.Printf("[Gying] 已为用户 %s 恢复scraper实例（含cookie）\n", u.UsernameMasked)
 				}
 			} else {
 				var ok bool
@@ -1403,10 +1469,10 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 				}
 			}
 
-			results, err := p.searchWithScraper(keyword, scraper)
+			results, err := p.searchWithScraperWithRetry(keyword, scraper, u)
 			if err != nil {
 				if DebugLog {
-					fmt.Printf("[Gying] 用户 %s 搜索失败: %v\n", u.UsernameMasked, err)
+					fmt.Printf("[Gying] 用户 %s 搜索失败（已重试）: %v\n", u.UsernameMasked, err)
 				}
 				return
 			}
@@ -1423,7 +1489,49 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 	return p.deduplicateResults(allResults)
 }
 
-// searchWithCookie 使用scraper搜索
+// searchWithScraperWithRetry 使用scraper搜索（带403自动重新登录重试）
+func (p *GyingPlugin) searchWithScraperWithRetry(keyword string, scraper *cloudscraper.Scraper, user *User) ([]model.SearchResult, error) {
+	results, err := p.searchWithScraper(keyword, scraper)
+	
+	// 检测是否为403错误
+	if err != nil && strings.Contains(err.Error(), "403") {
+		if DebugLog {
+			fmt.Printf("[Gying] ⚠️  检测到403错误，尝试重新登录用户 %s\n", user.UsernameMasked)
+		}
+		
+		// 尝试重新登录
+		if reloginErr := p.reloginUser(user); reloginErr != nil {
+			if DebugLog {
+				fmt.Printf("[Gying] ❌ 重新登录失败: %v\n", reloginErr)
+			}
+			return nil, fmt.Errorf("403错误且重新登录失败: %w", reloginErr)
+		}
+		
+		// 获取新的scraper实例
+		scraperVal, exists := p.scrapers.Load(user.Hash)
+		if !exists {
+			return nil, fmt.Errorf("重新登录后未找到scraper实例")
+		}
+		
+		newScraper, ok := scraperVal.(*cloudscraper.Scraper)
+		if !ok || newScraper == nil {
+			return nil, fmt.Errorf("重新登录后scraper实例无效")
+		}
+		
+		// 使用新scraper重试搜索
+		if DebugLog {
+			fmt.Printf("[Gying] 🔄 使用新登录状态重试搜索\n")
+		}
+		results, err = p.searchWithScraper(keyword, newScraper)
+		if err != nil {
+			return nil, fmt.Errorf("重新登录后搜索仍然失败: %w", err)
+		}
+	}
+	
+	return results, err
+}
+
+// searchWithScraper 使用scraper搜索
 func (p *GyingPlugin) searchWithScraper(keyword string, scraper *cloudscraper.Scraper) ([]model.SearchResult, error) {
 	if DebugLog {
 		fmt.Printf("[Gying] ---------- searchWithScraper 开始 ----------\n")
@@ -1450,7 +1558,8 @@ func (p *GyingPlugin) searchWithScraper(keyword string, scraper *cloudscraper.Sc
 	if DebugLog {
 		fmt.Printf("[Gying] 搜索响应状态码: %d\n", resp.StatusCode)
 	}
-
+	
+	// 读取响应body
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		if DebugLog {
@@ -1469,6 +1578,21 @@ func (p *GyingPlugin) searchWithScraper(keyword string, scraper *cloudscraper.Sc
 			}
 			fmt.Printf("[Gying] 响应预览: %s\n", preview)
 		}
+	}
+	
+	// 检查403错误
+	if resp.StatusCode == 403 {
+		if DebugLog {
+			fmt.Printf("[Gying] ❌ 收到403 Forbidden - Cookie可能已过期或被网站拒绝\n")
+			if len(body) > 0 {
+				preview := string(body)
+				if len(preview) > 300 {
+					preview = preview[:300] + "..."
+				}
+				fmt.Printf("[Gying] 403响应内容: %s\n", preview)
+			}
+		}
+		return nil, fmt.Errorf("HTTP 403 Forbidden - 可能需要重新登录")
 	}
 
 	// 2. 提取 _obj.search JSON
@@ -1521,19 +1645,38 @@ func (p *GyingPlugin) searchWithScraper(keyword string, scraper *cloudscraper.Sc
 		}
 	}
 
-	// 3. 并发请求详情接口
-	results := p.fetchAllDetails(&searchData, scraper)
+	// 3. 刷新防爬cookies（关键！访问详情页触发vrg_sc、vrg_go等防爬cookies）
+	if DebugLog {
+		fmt.Printf("[Gying] 刷新防爬cookies...\n")
+	}
+	refreshResp, err := scraper.Get("https://www.gying.net/mv/wkMn")
+	if err == nil && refreshResp != nil {
+		refreshResp.Body.Close()
+		if DebugLog {
+			fmt.Printf("[Gying] 防爬cookies刷新成功 (状态码: %d)\n", refreshResp.StatusCode)
+		}
+	}
+	
+	// 4. 并发请求详情接口
+	results, err := p.fetchAllDetails(&searchData, scraper)
+	if err != nil {
+		if DebugLog {
+			fmt.Printf("[Gying] fetchAllDetails 失败: %v\n", err)
+			fmt.Printf("[Gying] ---------- searchWithScraper 结束 ----------\n")
+		}
+		return nil, err
+	}
 	
 	if DebugLog {
 		fmt.Printf("[Gying] fetchAllDetails 返回 %d 条结果\n", len(results))
-		fmt.Printf("[Gying] ---------- searchWithCookie 结束 ----------\n")
+		fmt.Printf("[Gying] ---------- searchWithScraper 结束 ----------\n")
 	}
 
 	return results, nil
 }
 
 // fetchAllDetails 并发获取所有详情
-func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscraper.Scraper) []model.SearchResult {
+func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscraper.Scraper) ([]model.SearchResult, error) {
 	if DebugLog {
 		fmt.Printf("[Gying] >>> fetchAllDetails 开始\n")
 		fmt.Printf("[Gying] 需要获取 %d 个详情\n", len(searchData.L.I))
@@ -1544,9 +1687,11 @@ func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscra
 	var wg sync.WaitGroup
 
 	semaphore := make(chan struct{}, MaxConcurrentDetails)
+	errChan := make(chan error, 1) // 用于接收403错误
 
 	successCount := 0
 	failCount := 0
+	has403 := false
 
 	for i := 0; i < len(searchData.L.I); i++ {
 		wg.Add(1)
@@ -1555,6 +1700,14 @@ func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscra
 
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
+
+			// 检查是否已经遇到403错误
+			mu.Lock()
+			if has403 {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
 
 			if DebugLog {
 				fmt.Printf("[Gying]   [%d/%d] 获取详情: ID=%s, Type=%s\n", 
@@ -1566,6 +1719,20 @@ func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscra
 				if DebugLog {
 					fmt.Printf("[Gying]   [%d/%d] ❌ 获取详情失败: %v\n", index+1, len(searchData.L.I), err)
 				}
+				
+				// 检查是否是403错误
+				if strings.Contains(err.Error(), "403") {
+					mu.Lock()
+					if !has403 {
+						has403 = true
+						select {
+						case errChan <- err:
+						default:
+						}
+					}
+					mu.Unlock()
+				}
+				
 				mu.Lock()
 				failCount++
 				mu.Unlock()
@@ -1593,12 +1760,22 @@ func (p *GyingPlugin) fetchAllDetails(searchData *SearchData, scraper *cloudscra
 
 	wg.Wait()
 
+	// 检查是否有403错误
+	select {
+	case err := <-errChan:
+		if DebugLog {
+			fmt.Printf("[Gying] <<< fetchAllDetails 检测到403错误，需要重新登录\n")
+		}
+		return nil, err
+	default:
+	}
+
 	if DebugLog {
 		fmt.Printf("[Gying] <<< fetchAllDetails 完成: 成功=%d, 失败=%d, 总计=%d\n", 
 			successCount, failCount, len(searchData.L.I))
 	}
 
-	return results
+	return results, nil
 }
 
 // fetchDetail 获取详情
@@ -1624,7 +1801,18 @@ func (p *GyingPlugin) fetchDetail(resourceID, resourceType string, scraper *clou
 		fmt.Printf("[Gying]     响应状态码: %d\n", resp.StatusCode)
 	}
 
+	// 检查403错误
+	if resp.StatusCode == 403 {
+		if DebugLog {
+			fmt.Printf("[Gying]     ❌ 详情接口返回403 - Cookie可能已过期\n")
+		}
+		return nil, fmt.Errorf("HTTP 403 Forbidden")
+	}
+
 	if resp.StatusCode != 200 {
+		if DebugLog {
+			fmt.Printf("[Gying]     ❌ HTTP错误: %d\n", resp.StatusCode)
+		}
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
@@ -1656,6 +1844,14 @@ func (p *GyingPlugin) fetchDetail(resourceID, resourceType string, scraper *clou
 
 	if DebugLog {
 		fmt.Printf("[Gying]     详情Code: %d, 网盘链接数: %d\n", detail.Code, len(detail.Panlist.URL))
+	}
+
+	// 检查JSON响应中的code字段（关键！）
+	if detail.Code == 403 {
+		if DebugLog {
+			fmt.Printf("[Gying]     ❌ 详情接口返回Code=403 - 登录状态可能已失效\n")
+		}
+		return nil, fmt.Errorf("Detail API returned code 403 - authentication may have expired")
 	}
 
 	return &detail, nil
@@ -1920,6 +2116,66 @@ func decryptCookie(encrypted string) (string, error) {
 	}
 
 	return string(plaintext), nil
+}
+
+// ============ Session保活 ============
+
+// startSessionKeepAlive 启动session保活任务
+func (p *GyingPlugin) startSessionKeepAlive() {
+	// 首次启动后延迟3分钟再开始（避免启动时过多请求）
+	time.Sleep(3 * time.Minute)
+	
+	// 立即执行一次保活
+	p.keepAllSessionsAlive()
+	
+	// 每3分钟执行一次保活
+	ticker := time.NewTicker(3 * time.Minute)
+	for range ticker.C {
+		p.keepAllSessionsAlive()
+	}
+}
+
+// keepAllSessionsAlive 保持所有用户的session活跃
+func (p *GyingPlugin) keepAllSessionsAlive() {
+	count := 0
+	
+	p.users.Range(func(key, value interface{}) bool {
+		user := value.(*User)
+		
+		// 只为active状态的用户保活
+		if user.Status != "active" {
+			return true
+		}
+		
+		// 获取scraper实例
+		scraperVal, exists := p.scrapers.Load(user.Hash)
+		if !exists {
+			return true
+		}
+		
+		scraper, ok := scraperVal.(*cloudscraper.Scraper)
+		if !ok || scraper == nil {
+			return true
+		}
+		
+		// 访问首页保持session活跃
+		go func(s *cloudscraper.Scraper, username string) {
+			resp, err := s.Get("https://www.gying.net/")
+			if err == nil && resp != nil {
+				resp.Body.Close()
+				if DebugLog {
+					fmt.Printf("[Gying] 💓 Session保活成功: %s (状态码: %d)\n", username, resp.StatusCode)
+				}
+			}
+		}(scraper, user.UsernameMasked)
+		
+		count++
+		return true
+	})
+	
+	if DebugLog && count > 0 {
+		fmt.Printf("[Gying] 💓 已为 %d 个用户执行session保活\n", count)
+	}
 }
 
 // ============ 定期清理 ============
