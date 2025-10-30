@@ -1226,6 +1226,11 @@ func (s *SearchService) searchPlugins(keyword string, plugins []string, forceRef
 	if ext == nil {
 		ext = make(map[string]interface{})
 	}
+
+	// 关键：将forceRefresh同步到插件ext["refresh"]
+    if forceRefresh {
+        ext["refresh"] = true
+    }
 	
 	// 生成缓存键
 	cacheKey := cache.GeneratePluginCacheKey(keyword, plugins)
