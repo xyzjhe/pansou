@@ -1063,7 +1063,8 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 				source = "unknown"
 			}
 			
-			// 创建合并后的链接
+			// 赋值给Note前，支持多个关键词裁剪
+			title = util.CutTitleByKeywords(title, []string{"简介", "描述"})
 			mergedLink := model.MergedLink{
 				URL:      link.URL,
 				Password: link.Password,

@@ -540,6 +540,20 @@ func ParseSearchResults(html string, channel string) ([]model.SearchResult, stri
 	return results, nextPageParam, nil
 }
 
+// CutTitleByKeywords 根据关键词进行裁剪，保留最前关键词前的部分
+func CutTitleByKeywords(title string, keywords []string) string {
+    minIdx := -1
+    for _, kw := range keywords {
+        if idx := strings.Index(title, kw); idx >= 0 && (minIdx == -1 || idx < minIdx) {
+            minIdx = idx
+        }
+    }
+    if minIdx > 0 {
+        return strings.TrimSpace(title[:minIdx])
+    }
+    return strings.TrimSpace(title)
+}
+
 // extractImageURLFromStyle 从CSS样式字符串中提取background-image的URL
 func extractImageURLFromStyle(style string) string {
 	// 查找background-image:url('...') 或 background-image:url("...")
@@ -624,5 +638,8 @@ func extractTitle(htmlContent string, textContent string) string {
 	}
 	
 	// 否则直接使用第一行作为标题
-	return firstLine
+	result := firstLine
+	// 统一裁剪：遇到简介/描述等关键字时，只保留前半部分
+	result = CutTitleByKeywords(result, []string{"简介", "描述"})
+	return result
 } 
