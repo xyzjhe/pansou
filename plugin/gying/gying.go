@@ -1959,9 +1959,11 @@ func (p *GyingPlugin) determineLinkType(linkURL string) string {
 		return "xunlei"
 	case strings.Contains(linkURL, "cloud.189.cn"):
 		return "tianyi"
-	case strings.Contains(linkURL, "115.com"):
+	case strings.Contains(linkURL, "115.com") || strings.Contains(linkURL, "115cdn.com") || strings.Contains(linkURL, "anxia.com"):
 		return "115"
-	case strings.Contains(linkURL, "123pan.com"):
+	case strings.Contains(linkURL, "123684.com") || strings.Contains(linkURL, "123685.com") || 
+		strings.Contains(linkURL, "123912.com") || strings.Contains(linkURL, "123pan.com") || 
+		strings.Contains(linkURL, "123pan.cn") || strings.Contains(linkURL, "123592.com"): 
 		return "123"
 	default:
 		return "others"
