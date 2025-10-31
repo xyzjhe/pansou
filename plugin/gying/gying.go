@@ -1911,6 +1911,14 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 	title := searchData.L.Title[index]
 	resourceType := searchData.L.D[index]
 	resourceID := searchData.L.I[index]
+	
+	// 获取年份并拼接到标题后面
+	var year int
+	if index < len(searchData.L.Year) && searchData.L.Year[index] > 0 {
+		year = searchData.L.Year[index]
+		// 拼接年份到标题：遮天（2023）
+		title = fmt.Sprintf("%s（%d）", title, year)
+	}
 
 	// 构建描述
 	var contentParts []string
@@ -1927,10 +1935,10 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 	// 提取网盘链接
 	links := p.extractPanLinks(detail)
 
-	// 构建标签
+	// 构建标签（保留年份标签，提供额外的过滤维度）
 	var tags []string
-	if index < len(searchData.L.Year) && searchData.L.Year[index] > 0 {
-		tags = append(tags, fmt.Sprintf("%d", searchData.L.Year[index]))
+	if year > 0 {
+		tags = append(tags, fmt.Sprintf("%d", year))
 	}
 
 	return model.SearchResult{
