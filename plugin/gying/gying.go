@@ -559,11 +559,16 @@ func (p *GyingPlugin) loadAllUsers() {
 		return
 	}
 
-	count := 0
+	totalFiles := 0
+	loadedCount := 0
+	skippedInactive := 0
+	
 	for _, file := range files {
 		if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
 			continue
 		}
+		
+		totalFiles++
 
 		filePath := filepath.Join(StorageDir, file.Name())
 		data, err := ioutil.ReadFile(filePath)
@@ -576,21 +581,31 @@ func (p *GyingPlugin) loadAllUsers() {
 			continue
 		}
 
+		// 过滤条件：status必须是active
+		if user.Status != "active" {
+			if DebugLog {
+				fmt.Printf("[Gying] ⏭️  跳过用户 %s: status=%s (非active)\n", user.UsernameMasked, user.Status)
+			}
+			skippedInactive++
+			continue
+		}
+
 		// 只存储用户数据（包括用户名和加密密码）
 		// scraper实例将在initDefaultAccounts中通过重新登录获取
 		p.users.Store(user.Hash, &user)
-		count++
+		loadedCount++
 		
 		if DebugLog {
 			hasPassword := "无"
 			if user.EncryptedPassword != "" {
 				hasPassword = "有"
 			}
-			fmt.Printf("[Gying] 已加载用户 %s (密码:%s, 将在初始化时登录)\n", user.UsernameMasked, hasPassword)
+			fmt.Printf("[Gying] ✅ 已加载用户 %s (密码:%s, 将在初始化时登录)\n", user.UsernameMasked, hasPassword)
 		}
 	}
 
-	fmt.Printf("[Gying] 已加载 %d 个用户到内存\n", count)
+	fmt.Printf("[Gying] 用户加载完成: 总文件=%d, 已加载=%d, 跳过(非active)=%d\n", 
+		totalFiles, loadedCount, skippedInactive)
 }
 
 // initDefaultAccounts 初始化所有账户（异步执行，不阻塞启动）
@@ -1941,6 +1956,25 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 		tags = append(tags, fmt.Sprintf("%d", year))
 	}
 
+	// 从网盘时间数组中选择最新的时间（最小的相对时间值）
+	// 检查 detail 是否为 nil
+	var datetime time.Time
+	if detail == nil {
+		if DebugLog {
+			fmt.Printf("[Gying] buildResult: detail为nil，使用当前时间\n")
+		}
+		datetime = time.Now()
+	} else {
+		datetime = p.parseUpdateTime(detail.Panlist.Time)
+		if DebugLog {
+			fmt.Printf("[Gying] buildResult时间解析: 时间数组长度=%d, 解析后时间=%v\n", 
+				len(detail.Panlist.Time), datetime.Format("2006-01-02 15:04:05"))
+			if len(detail.Panlist.Time) > 0 {
+				fmt.Printf("[Gying]   前3个时间字符串: %v\n", detail.Panlist.Time[:min(3, len(detail.Panlist.Time))])
+			}
+		}
+	}
+
 	return model.SearchResult{
 		UniqueID: fmt.Sprintf("gying-%s-%s", resourceType, resourceID),
 		Title:    title,
@@ -1948,8 +1982,112 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 		Links:    links,
 		Tags:     tags,
 		Channel:  "", // 插件搜索结果Channel为空
-		Datetime: time.Now(),
+		Datetime: datetime,
 	}
+}
+
+// parseUpdateTime 解析网盘更新时间数组，返回最新的更新时间
+// 时间字符串格式：["今天", "昨天", "2天前", "1月前", "1年前"] 等
+func (p *GyingPlugin) parseUpdateTime(timeStrs []string) time.Time {
+	// 处理 nil slice 的情况
+	if timeStrs == nil || len(timeStrs) == 0 {
+		if DebugLog {
+			fmt.Printf("[Gying] parseUpdateTime: 时间数组为空或nil，返回当前时间\n")
+		}
+		// 如果没有时间信息，返回当前时间
+		return time.Now()
+	}
+
+	now := time.Now()
+	var latestTime *time.Time
+
+	if DebugLog {
+		fmt.Printf("[Gying] parseUpdateTime: 开始解析 %d 个时间字符串\n", len(timeStrs))
+	}
+
+	// 遍历所有时间字符串，找到最新的（最接近当前时间的）那个
+	for i, timeStr := range timeStrs {
+		if timeStr == "" {
+			continue
+		}
+
+		parsedTime := p.parseRelativeTime(timeStr, now)
+		if parsedTime != nil {
+			if DebugLog && i < 5 { // 只打印前5个，避免日志过多
+				fmt.Printf("[Gying]   [%d] '%s' -> %v\n", i, timeStr, parsedTime.Format("2006-01-02 15:04:05"))
+			}
+			// 找到最接近当前时间的（最新的）
+			if latestTime == nil || parsedTime.After(*latestTime) {
+				latestTime = parsedTime
+			}
+		} else {
+			if DebugLog && i < 5 {
+				fmt.Printf("[Gying]   [%d] '%s' -> 解析失败\n", i, timeStr)
+			}
+		}
+	}
+
+	// 如果解析失败，返回当前时间
+	if latestTime == nil {
+		if DebugLog {
+			fmt.Printf("[Gying] parseUpdateTime: 所有时间解析失败，返回当前时间\n")
+			// 输出前几个时间字符串用于调试
+			if len(timeStrs) > 0 {
+				fmt.Printf("[Gying]   前3个时间字符串: %v\n", timeStrs[:min(3, len(timeStrs))])
+			}
+		}
+		return time.Now()
+	}
+
+	if DebugLog {
+		fmt.Printf("[Gying] parseUpdateTime: 最终选择时间 %v\n", latestTime.Format("2006-01-02 15:04:05"))
+	}
+	return *latestTime
+}
+
+// parseRelativeTime 解析单个相对时间字符串，返回对应的time.Time
+// 支持格式：今天、昨天、N天前、N月前、N年前
+func (p *GyingPlugin) parseRelativeTime(timeStr string, baseTime time.Time) *time.Time {
+	timeStr = strings.TrimSpace(timeStr)
+	if timeStr == "" {
+		return nil
+	}
+
+	switch timeStr {
+	case "今天":
+		t := baseTime.Truncate(24 * time.Hour)
+		return &t
+	case "昨天":
+		t := baseTime.AddDate(0, 0, -1).Truncate(24 * time.Hour)
+		return &t
+	default:
+		// 解析 "N天前"、"N月前"、"N年前" 格式
+		if strings.HasSuffix(timeStr, "天前") {
+			daysStr := strings.TrimSuffix(timeStr, "天前")
+			days, err := strconv.Atoi(daysStr)
+			if err == nil && days >= 0 {
+				t := baseTime.AddDate(0, 0, -days).Truncate(24 * time.Hour)
+				return &t
+			}
+		} else if strings.HasSuffix(timeStr, "月前") {
+			monthsStr := strings.TrimSuffix(timeStr, "月前")
+			months, err := strconv.Atoi(monthsStr)
+			if err == nil && months >= 0 {
+				t := baseTime.AddDate(0, -months, 0).Truncate(24 * time.Hour)
+				return &t
+			}
+		} else if strings.HasSuffix(timeStr, "年前") {
+			yearsStr := strings.TrimSuffix(timeStr, "年前")
+			years, err := strconv.Atoi(yearsStr)
+			if err == nil && years >= 0 {
+				t := baseTime.AddDate(-years, 0, 0).Truncate(24 * time.Hour)
+				return &t
+			}
+		}
+	}
+
+	// 无法解析，返回nil
+	return nil
 }
 
 // extractPanLinks 提取网盘链接
@@ -1987,10 +2125,23 @@ func (p *GyingPlugin) extractPanLinks(detail *DetailData) []model.Link {
 			password = urlPwd
 		}
 
+		// 解析对应的时间
+		var linkDatetime time.Time
+		if i < len(detail.Panlist.Time) && detail.Panlist.Time[i] != "" {
+			timeStr := detail.Panlist.Time[i]
+			parsedTime := p.parseRelativeTime(timeStr, time.Now())
+			if parsedTime != nil {
+				linkDatetime = *parsedTime
+			}
+			// 如果解析失败，保持为零值，合并逻辑会使用result.Datetime
+		}
+		// 如果没有时间信息，保持为零值，合并逻辑会使用result.Datetime
+
 		links = append(links, model.Link{
 			Type:     linkType,
 			URL:      linkURL,
 			Password: password,
+			Datetime: linkDatetime,
 		})
 	}
 
@@ -2285,4 +2436,5 @@ func (p *GyingPlugin) markInactiveUsers() int {
 
 	return markedCount
 }
+
 

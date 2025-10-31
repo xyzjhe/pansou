@@ -1065,11 +1065,18 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 			
 			// 赋值给Note前，支持多个关键词裁剪
 			title = util.CutTitleByKeywords(title, []string{"简介", "描述"})
+			
+			// 优先使用链接自己的时间，如果没有则使用搜索结果的时间
+			linkDatetime := result.Datetime
+			if !link.Datetime.IsZero() {
+				linkDatetime = link.Datetime
+			}
+			
 			mergedLink := model.MergedLink{
 				URL:      link.URL,
 				Password: link.Password,
 				Note:     title, // 使用找到的特定标题
-				Datetime: result.Datetime,
+				Datetime: linkDatetime,
 				Source:   source, // 添加数据来源字段
 				Images:   result.Images, // 添加TG消息中的图片链接
 			}
@@ -1498,5 +1505,6 @@ func calculateTimeScore(datetime time.Time) float64 {
 		return 20   // 1年以上
 	}
 }
+
 
 
