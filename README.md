@@ -41,7 +41,7 @@ susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,
 duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,
 libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,
 sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,
-discourse,yunsou,ahhhhfs,nsgame,gying
+discourse,yunsou,ahhhhfs,nsgame,gying,quark4k,quarksoo,sousou,ash
 </pre>
 </details>
 

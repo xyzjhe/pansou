@@ -84,6 +84,7 @@ import (
 	_ "pansou/plugin/quark4k"
 	_ "pansou/plugin/quarksoo"
 	_ "pansou/plugin/sousou"
+	_ "pansou/plugin/ash"
 )
 
 // 全局缓存写入管理器
