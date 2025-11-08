@@ -906,14 +906,59 @@ func extractTitleFromLinkLine(line string) string {
 	return ""
 }
 
-// 判断是否为链接前缀词
+// 判断是否为链接前缀词（包括网盘名称）
 func isLinkPrefix(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
-	return text == "链接" || 
-		   text == "地址" || 
-		   text == "资源地址" || 
-		   text == "网盘" || 
-		   text == "网盘地址"
+	
+	// 标准链接前缀词
+	if text == "链接" || 
+	   text == "地址" || 
+	   text == "资源地址" || 
+	   text == "网盘" || 
+	   text == "网盘地址" {
+		return true
+	}
+	
+	// 网盘名称（防止误将网盘名称当作标题）
+	cloudDiskNames := []string{
+		// 夸克网盘
+		"夸克", "夸克网盘", "quark", "夸克云盘",
+		
+		// 百度网盘
+		"百度", "百度网盘", "baidu", "百度云", "bdwp", "bdpan",
+		
+		// 迅雷网盘
+		"迅雷", "迅雷网盘", "xunlei", "迅雷云盘",
+		
+		// 115网盘
+		"115", "115网盘", "115云盘",
+		
+		// 123网盘
+		"123", "123pan", "123网盘", "123云盘",
+		
+		// 阿里云盘
+		"阿里", "阿里云", "阿里云盘", "aliyun", "alipan", "阿里网盘",
+		
+		// 天翼云盘
+		"天翼", "天翼云", "天翼云盘", "tianyi", "天翼网盘",
+		
+		// UC网盘
+		"uc", "uc网盘", "uc云盘",
+		
+		// 移动云盘
+		"移动", "移动云", "移动云盘", "caiyun", "彩云",
+		
+		// PikPak
+		"pikpak", "pikpak网盘",
+	}
+	
+	for _, name := range cloudDiskNames {
+		if text == name {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // 清理标题文本
@@ -1010,18 +1055,24 @@ func mergeResultsByType(results []model.SearchResult, keyword string, cloudTypes
 		}
 		
 		for _, link := range result.Links {
-			// 尝试从映射中获取该链接对应的标题
+			// 优先使用链接的WorkTitle字段，如果为空则回退到传统方式
 			title := result.Title // 默认使用消息标题
 			
-			// 查找完全匹配的链接
-			if specificTitle, found := linkTitleMap[link.URL]; found && specificTitle != "" {
-				title = specificTitle // 如果找到特定标题，则使用它
+			if link.WorkTitle != "" {
+				// 如果链接有WorkTitle字段，优先使用
+				title = link.WorkTitle
 			} else {
-				// 如果没有找到完全匹配的链接，尝试查找前缀匹配的链接
-				for mappedLink, mappedTitle := range linkTitleMap {
-					if strings.HasPrefix(mappedLink, link.URL) {
-						title = mappedTitle
-						break
+				// 如果没有WorkTitle，使用传统方式从映射中获取该链接对应的标题
+				// 查找完全匹配的链接
+				if specificTitle, found := linkTitleMap[link.URL]; found && specificTitle != "" {
+					title = specificTitle // 如果找到特定标题，则使用它
+				} else {
+					// 如果没有找到完全匹配的链接，尝试查找前缀匹配的链接
+					for mappedLink, mappedTitle := range linkTitleMap {
+						if strings.HasPrefix(mappedLink, link.URL) {
+							title = mappedTitle
+							break
+						}
 					}
 				}
 			}
@@ -1505,6 +1556,5 @@ func calculateTimeScore(datetime time.Time) float64 {
 		return 20   // 1年以上
 	}
 }
-
 
 

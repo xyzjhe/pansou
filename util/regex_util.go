@@ -13,24 +13,24 @@ var AllPanLinksPattern = regexp.MustCompile(`(?i)(?:(?:magnet:\?xt=urn:btih:[a-z
 // 修改百度网盘链接正则表达式，确保只匹配到链接本身，不包含后面的文本
 var BaiduPanPattern = regexp.MustCompile(`https?://pan\.baidu\.com/s/[a-zA-Z0-9_-]+(?:\?pwd=[a-zA-Z0-9]{4})?`)
 var QuarkPanPattern = regexp.MustCompile(`https?://pan\.quark\.cn/s/[a-zA-Z0-9]+`)
-var XunleiPanPattern = regexp.MustCompile(`https?://pan\.xunlei\.com/s/[a-zA-Z0-9]+(?:\?pwd=[a-zA-Z0-9]+)?(?:#)?`)
+var XunleiPanPattern = regexp.MustCompile(`https?://pan\.xunlei\.com/s/[a-zA-Z0-9]+(?:\?pwd=[a-zA-Z0-9]{4})?(?:#)?`)
 // 添加天翼云盘链接正则表达式 - 精确匹配，支持URL编码的访问码
 var TianyiPanPattern = regexp.MustCompile(`https?://cloud\.189\.cn/t/[a-zA-Z0-9]+(?:%[0-9A-Fa-f]{2})*(?:（[^）]*）)?`)
 // 添加UC网盘链接正则表达式
 var UCPanPattern = regexp.MustCompile(`https?://drive\.uc\.cn/s/[a-zA-Z0-9]+(?:\?public=\d)?`)
 // 添加123网盘链接正则表达式
-var Pan123Pattern = regexp.MustCompile(`https?://(?:www\.)?123(?:684|685|912|pan|592)\.(?:com|cn)/s/[a-zA-Z0-9_-]+(?:\?(?:%E6%8F%90%E5%8F%96%E7%A0%81|提取码)[:：][a-zA-Z0-9]+)?`)
+var Pan123Pattern = regexp.MustCompile(`https?://(?:www\.)?123(?:684|865|685|912|pan|592)\.(?:com|cn)/s/[a-zA-Z0-9_-]+(?:\?(?:%E6%8F%90%E5%8F%96%E7%A0%81|提取码)[:：][a-zA-Z0-9]+)?`)
 // 添加115网盘链接正则表达式
 var Pan115Pattern = regexp.MustCompile(`https?://(?:115\.com|115cdn\.com|anxia\.com)/s/[a-zA-Z0-9]+(?:\?password=[a-zA-Z0-9]{4})?(?:#)?`)
 // 添加阿里云盘链接正则表达式
 var AliyunPanPattern = regexp.MustCompile(`https?://(?:www\.)?(?:alipan|aliyundrive)\.com/s/[a-zA-Z0-9]+`)
 
 // 提取码匹配正则表达式 - 增强提取密码的能力
-var PasswordPattern = regexp.MustCompile(`(?i)(?:(?:提取|访问|提取密|密)码|pwd)[：:]\s*([a-zA-Z0-9]{4})`)
-var UrlPasswordPattern = regexp.MustCompile(`(?i)[?&]pwd=([a-zA-Z0-9]{4})`)
+var PasswordPattern = regexp.MustCompile(`(?i)(?:(?:提取|访问|提取密|密)码|pwd)[：:]\s*([a-zA-Z0-9]{4})(?:[^a-zA-Z0-9]|$)`)
+var UrlPasswordPattern = regexp.MustCompile(`(?i)[?&]pwd=([a-zA-Z0-9]{4})(?:[^a-zA-Z0-9]|$)`)
 
 // 百度网盘密码专用正则表达式 - 确保只提取4位密码
-var BaiduPasswordPattern = regexp.MustCompile(`(?i)(?:链接：.*?提取码：|密码：|提取码：|pwd=|pwd:|pwd：)([a-zA-Z0-9]{4})`)
+var BaiduPasswordPattern = regexp.MustCompile(`(?i)(?:链接：.*?提取码：|密码：|提取码：|pwd=|pwd:|pwd：)([a-zA-Z0-9]{4})(?:[^a-zA-Z0-9]|$)`)
 
 // GetLinkType 获取链接类型
 func GetLinkType(url string) string {
@@ -83,7 +83,7 @@ func GetLinkType(url string) string {
 	}
 	
 	// 123网盘有多个域名
-	if strings.Contains(url, "123684.com") || strings.Contains(url, "123685.com") || 
+	if strings.Contains(url, "123684.com") || strings.Contains(url, "123685.com") || strings.Contains(url, "123865.com") || 
 	   strings.Contains(url, "123912.com") || strings.Contains(url, "123pan.com") || 
 	   strings.Contains(url, "123pan.cn") || strings.Contains(url, "123592.com") {
 		return "123"
@@ -115,22 +115,20 @@ func CleanBaiduPanURL(url string) string {
 			
 			// 如果找到了结束标记，截取到结束标记位置
 			if minEndIdx < len(url) {
-				// 特殊处理pwd参数
-				if strings.Contains(url[:minEndIdx], "?pwd=") {
-					pwdIdx := strings.Index(url, "?pwd=")
-					pwdEndIdx := pwdIdx + 10 // ?pwd=xxxx 总共9个字符，加上问号前的位置
-					if pwdEndIdx < len(url) {
-						return url[:pwdEndIdx]
-					}
-				}
-				return url[:minEndIdx]
+				url = url[:minEndIdx]
 			}
 			
-			// 如果没有找到结束标记，但URL包含?pwd=，确保只保留4位密码
+			// 特殊处理pwd参数，确保只保留4位密码
 			if strings.Contains(url, "?pwd=") {
 				pwdIdx := strings.Index(url, "?pwd=")
-				if pwdIdx > 0 && pwdIdx+9 <= len(url) { // ?pwd=xxxx 总共9个字符
-					return url[:pwdIdx+9]
+				if pwdIdx >= 0 && len(url) > pwdIdx+5 { // ?pwd= 有5个字符
+					// 只保留?pwd=后面的4位密码
+					pwdEndIdx := pwdIdx + 9 // ?pwd=xxxx 总共9个字符
+					if pwdEndIdx <= len(url) {
+						return url[:pwdEndIdx]
+					}
+					// 如果剩余字符不足4位，返回所有可用字符
+					return url
 				}
 			}
 		}
@@ -218,7 +216,7 @@ func CleanUCPanURL(url string) string {
 // Clean123PanURL 清理123网盘URL，确保链接格式正确
 func Clean123PanURL(url string) string {
 	// 检查是否为123网盘链接
-	domains := []string{"123684.com", "123685.com", "123912.com", "123pan.com", "123pan.cn", "123592.com"}
+	domains := []string{"123684.com", "123685.com","123865.com", "123912.com", "123pan.com", "123pan.cn", "123592.com"}
 	isDomain123 := false
 	
 	for _, domain := range domains {
@@ -416,13 +414,18 @@ func ExtractPassword(content, url string) string {
 		}
 	}
 	
+	// 特殊处理迅雷网盘URL中的pwd参数
+	if strings.Contains(url, "pan.xunlei.com") && strings.Contains(url, "?pwd=") {
+		pwdPattern := regexp.MustCompile(`\?pwd=([a-zA-Z0-9]{4})`)
+		pwdMatches := pwdPattern.FindStringSubmatch(url)
+		if len(pwdMatches) > 1 {
+			return pwdMatches[1]
+		}
+	}
+	
 	// 先从URL中提取密码
 	matches := UrlPasswordPattern.FindStringSubmatch(url)
 	if len(matches) > 1 {
-		// 确保百度网盘密码只有4位
-		if strings.Contains(strings.ToLower(url), "pan.baidu.com") && len(matches[1]) > 4 {
-			return matches[1][:4]
-		}
 		return matches[1]
 	}
 	
@@ -443,6 +446,7 @@ func ExtractPassword(content, url string) string {
 	// 特殊处理123网盘URL中的提取码
 	if (strings.Contains(url, "123684.com") || 
 		strings.Contains(url, "123685.com") || 
+		strings.Contains(url, "123865.com") || 
 		strings.Contains(url, "123912.com") || 
 		strings.Contains(url, "123pan.com") || 
 		strings.Contains(url, "123pan.cn") || 
@@ -460,6 +464,7 @@ func ExtractPassword(content, url string) string {
 	// 检查123网盘URL中的提取码参数
 	if (strings.Contains(url, "123684.com") || 
 		strings.Contains(url, "123685.com") || 
+		strings.Contains(url, "123865.com") || 
 		strings.Contains(url, "123912.com") || 
 		strings.Contains(url, "123pan.com") || 
 		strings.Contains(url, "123pan.cn") || 
@@ -766,6 +771,7 @@ func ExtractNetDiskLinks(text string) []string {
 			   strings.Contains(cleanURL, "drive.uc.cn") ||
 			   strings.Contains(cleanURL, "123684.com") ||
 			   strings.Contains(cleanURL, "123685.com") ||
+			   strings.Contains(cleanURL, "123865.com") ||
 			   strings.Contains(cleanURL, "123912.com") ||
 			   strings.Contains(cleanURL, "123pan.com") ||
 			   strings.Contains(cleanURL, "123pan.cn") ||
