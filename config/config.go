@@ -112,7 +112,7 @@ func Init() {
 func getDefaultChannels() []string {
 	channelsEnv := os.Getenv("CHANNELS")
 	if channelsEnv == "" {
-		return []string{"tgsearchers3"}
+		return []string{"tgsearchers4"}
 	}
 	return strings.Split(channelsEnv, ",")
 }

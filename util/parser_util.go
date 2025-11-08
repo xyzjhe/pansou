@@ -523,6 +523,9 @@ func ParseSearchResults(html string, channel string) ([]model.SearchResult, stri
 		
 		// 只有包含链接的消息才添加到结果中
 		if len(links) > 0 {
+			// 为每个链接提取作品标题
+			links = extractWorkTitlesForLinks(links, messageText, title)
+			
 			results = append(results, model.SearchResult{
 				MessageID: messageID,
 				UniqueID:  uniqueID,
@@ -619,7 +622,12 @@ func extractTitle(htmlContent string, textContent string) string {
 				return strings.TrimSpace(firstLine[len("名称："):])
 			}
 			
-			return firstLine
+			// 如果第一行只是标签(以#开头)，尝试从第二行提取
+			if strings.HasPrefix(firstLine, "#") && !strings.Contains(firstLine, "名称") {
+				// 继续从文本内容提取
+			} else {
+				return firstLine
+			}
 		}
 	}
 	
@@ -632,6 +640,31 @@ func extractTitle(htmlContent string, textContent string) string {
 	// 第一行通常是标题
 	firstLine := strings.TrimSpace(lines[0])
 	
+	// 如果第一行只是标签(以#开头且不包含实际内容)，尝试从第二行或"名称："字段提取
+	if strings.HasPrefix(firstLine, "#") {
+		// 检查是否有"名称："字段
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "名称：") {
+				return strings.TrimSpace(line[len("名称："):])
+			}
+		}
+		
+		// 如果没有"名称："字段，尝试使用第二行
+		if len(lines) > 1 {
+			secondLine := strings.TrimSpace(lines[1])
+			if strings.HasPrefix(secondLine, "名称：") {
+				return strings.TrimSpace(secondLine[len("名称："):])
+			}
+			// 如果第二行不是空的且不是标签，使用第二行
+			if secondLine != "" && !strings.HasPrefix(secondLine, "#") {
+				result := secondLine
+				result = CutTitleByKeywords(result, []string{"简介", "描述"})
+				return result
+			}
+		}
+	}
+	
 	// 如果第一行以"名称："开头，则提取冒号后面的内容作为标题
 	if strings.HasPrefix(firstLine, "名称：") {
 		return strings.TrimSpace(firstLine[len("名称："):])
@@ -642,4 +675,170 @@ func extractTitle(htmlContent string, textContent string) string {
 	// 统一裁剪：遇到简介/描述等关键字时，只保留前半部分
 	result = CutTitleByKeywords(result, []string{"简介", "描述"})
 	return result
+}
+
+// extractWorkTitlesForLinks 为每个链接提取作品标题
+func extractWorkTitlesForLinks(links []model.Link, messageText string, defaultTitle string) []model.Link {
+	if len(links) == 0 {
+		return links
+	}
+	
+	// 如果链接数量 <= 4，认为是同一个作品的不同网盘链接
+	if len(links) <= 4 {
+		for i := range links {
+			links[i].WorkTitle = defaultTitle
+		}
+		return links
+	}
+	
+	// 如果链接数量 > 4，尝试为每个链接匹配具体的作品标题
+	lines := strings.Split(messageText, "\n")
+	
+	// 检测是否是单行格式："作品名丨网盘：链接" 或 "作品名 网盘：链接"
+	if isSingleLineFormat(lines) {
+		return extractWorkTitlesFromSingleLineFormat(links, lines, defaultTitle)
+	}
+	
+	// 其他格式：尝试通过上下文匹配
+	return extractWorkTitlesFromContext(links, messageText, defaultTitle)
+}
+
+// isSingleLineFormat 检测是否是单行格式
+func isSingleLineFormat(lines []string) bool {
+	singleLineCount := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		
+		// 检测是否包含："作品名丨网盘：链接" 或类似格式
+		if strings.Contains(line, "丨") && strings.Contains(line, "：") && (strings.Contains(line, "http://") || strings.Contains(line, "https://")) {
+			singleLineCount++
+		}
+	}
+	
+	// 如果超过一半的行都符合单行格式，则认为是单行格式
+	return singleLineCount > len(lines)/3
+}
+
+// extractWorkTitlesFromSingleLineFormat 从单行格式中提取作品标题
+func extractWorkTitlesFromSingleLineFormat(links []model.Link, lines []string, defaultTitle string) []model.Link {
+	// 为每个链接构建URL到作品标题的映射
+	urlToWorkTitle := make(map[string]string)
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		
+		// 匹配格式: "作品名丨网盘名：链接" 或 "作品名 网盘名：链接"
+		// 提取作品名和链接
+		var workTitle string
+		var linkURL string
+		
+		// 优先匹配 "作品名丨网盘：链接" 格式
+		if strings.Contains(line, "丨") {
+			parts := strings.Split(line, "丨")
+			if len(parts) >= 2 {
+				workTitle = strings.TrimSpace(parts[0])
+				// 从第二部分提取链接
+				restPart := parts[1]
+				if idx := strings.Index(restPart, "http"); idx >= 0 {
+					linkURL = extractFirstURL(restPart[idx:])
+				}
+			}
+		} else if strings.Contains(line, "：") {
+			// 匹配 "作品名 网盘：链接" 格式
+			colonIdx := strings.Index(line, "：")
+			if colonIdx > 0 {
+				beforeColon := line[:colonIdx]
+				afterColon := line[colonIdx+len("："):]
+				
+				// 尝试从冒号前提取作品名（去除网盘名）
+				workTitle = extractWorkTitleBeforeColon(beforeColon)
+				
+				// 从冒号后提取链接
+				if idx := strings.Index(afterColon, "http"); idx >= 0 {
+					linkURL = extractFirstURL(afterColon[idx:])
+				}
+			}
+		}
+		
+		// 如果成功提取了作品名和链接，添加到映射
+		if workTitle != "" && linkURL != "" {
+			// 标准化URL用于匹配
+			normalizedURL := normalizeUrl(linkURL)
+			urlToWorkTitle[normalizedURL] = workTitle
+		}
+	}
+	
+	// 为每个链接设置作品标题
+	for i := range links {
+		normalizedURL := normalizeUrl(links[i].URL)
+		if workTitle, found := urlToWorkTitle[normalizedURL]; found {
+			links[i].WorkTitle = workTitle
+		} else {
+			links[i].WorkTitle = defaultTitle
+		}
+	}
+	
+	return links
+}
+
+// extractFirstURL 从文本中提取第一个URL
+func extractFirstURL(text string) string {
+	// 提取到空格或换行符为止
+	endIdx := len(text)
+	if idx := strings.Index(text, " "); idx > 0 && idx < endIdx {
+		endIdx = idx
+	}
+	if idx := strings.Index(text, "\n"); idx > 0 && idx < endIdx {
+		endIdx = idx
+	}
+	if idx := strings.Index(text, "\r"); idx > 0 && idx < endIdx {
+		endIdx = idx
+	}
+	
+	return strings.TrimSpace(text[:endIdx])
+}
+
+// extractWorkTitleBeforeColon 从冒号前的文本中提取作品名
+func extractWorkTitleBeforeColon(text string) string {
+	text = strings.TrimSpace(text)
+	
+	// 移除常见的网盘名称
+	netdiskNames := []string{
+		"夸克网盘", "夸克云盘", "夸克",
+		"百度网盘", "百度云盘", "百度云", "百度",
+		"迅雷网盘", "迅雷云盘", "迅雷",
+		"阿里云盘", "阿里网盘", "阿里云", "阿里",
+		"天翼云盘", "天翼网盘", "天翼云", "天翼",
+		"UC网盘", "UC云盘", "UC",
+		"移动云盘", "移动云", "移动",
+		"115网盘", "115云盘", "115",
+		"123网盘", "123云盘", "123",
+		"PikPak网盘", "PikPak",
+		"网盘", "云盘",
+	}
+	
+	// 从右向左移除网盘名称
+	for _, name := range netdiskNames {
+		if strings.HasSuffix(text, name) {
+			text = strings.TrimSpace(text[:len(text)-len(name)])
+			break
+		}
+	}
+	
+	return text
+}
+
+// extractWorkTitlesFromContext 通过上下文为链接提取作品标题
+func extractWorkTitlesFromContext(links []model.Link, messageText string, defaultTitle string) []model.Link {
+	// 简单实现：如果无法精确匹配，则都使用默认标题
+	for i := range links {
+		links[i].WorkTitle = defaultTitle
+	}
+	return links
 } 

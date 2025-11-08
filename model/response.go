@@ -4,10 +4,11 @@ import "time"
 
 // Link 网盘链接
 type Link struct {
-	Type     string    `json:"type" sonic:"type"`
-	URL      string    `json:"url" sonic:"url"`
-	Password string    `json:"password" sonic:"password"`
-	Datetime time.Time `json:"datetime,omitempty" sonic:"datetime,omitempty"` // 链接更新时间（可选）
+	Type      string    `json:"type" sonic:"type"`
+	URL       string    `json:"url" sonic:"url"`
+	Password  string    `json:"password" sonic:"password"`
+	Datetime  time.Time `json:"datetime,omitempty" sonic:"datetime,omitempty"` // 链接更新时间（可选）
+	WorkTitle string    `json:"work_title,omitempty" sonic:"work_title,omitempty"` // 作品标题（用于区分同一消息中多个作品的链接）
 }
 
 // SearchResult 搜索结果

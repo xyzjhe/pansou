@@ -27,21 +27,14 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 本项目，并点上 Star !!!
 
 ### 使用Docker部署
+[qqpd搜索插件文档](plugin/qqpd/README.md)  
+[gying搜索插件文档](plugin/gying/README.md)  
 [常见问题总结](https://github.com/fish2018/pansou/issues/46)  
-
 [TG资源频道列表](https://github.com/fish2018/pansou/issues/4)
-
-[gying插件文档](https://github.com/fish2018/pansou/blob/main/plugin/gying/README.md)
-
 <details>
 <summary>插件列表（请务必按需加载）</summary>
 <pre>
-export ENABLED_PLUGINS=hunhepan,jikepan,panwiki,pansearch,panta,qupansou,
-susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,
-duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,
-libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,
-sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,
-discourse,yunsou,ahhhhfs,nsgame,gying,quark4k,quarksoo,sousou,ash
+export ENABLED_PLUGINS=hunhepan,jikepan,panwiki,pansearch,panta,qupansou,hdr4k,pan666,susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,discourse,yunsou,qqpd,gying,quark4k,quarksoo,sousou
 </pre>
 </details>
 
@@ -52,7 +45,7 @@ discourse,yunsou,ahhhhfs,nsgame,gying,quark4k,quarksoo,sousou,ash
 一键启动，开箱即用
 
 ```
-docker run -d --name pansou -p 80:80 -e ENABLED_PLUGINS="labi,zhizhen,shandian,duoduo,muou,wanou" ghcr.io/fish2018/pansou-web
+docker run -d --name pansou -p 80:80 ghcr.io/fish2018/pansou-web
 ```
 
 ##### 使用Docker Compose（推荐）
@@ -72,7 +65,7 @@ docker-compose logs -f
 ##### 直接使用Docker命令
 
 ```bash
-docker run -d --name pansou -p 8888:8888 -v pansou-cache:/app/cache -e CHANNELS="tgsearchers3,xxx" -e ENABLED_PLUGINS="labi,zhizhen,shandian,duoduo,muou,wanou" ghcr.io/fish2018/pansou:latest
+docker run -d --name pansou -p 8888:8888 ghcr.io/fish2018/pansou:latest
 ```
 
 ##### 使用Docker Compose（推荐）
@@ -213,7 +206,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -extldflags '-sta
 
 ```
 [program:pansou]
-environment=PORT=8888,CHANNELS="tgsearchers3,Aliyun_4K_Movies,bdbdndn11,yunpanx,bsbdbfjfjff,yp123pan,sbsbsnsqq,yunpanxunlei,tianyifc,BaiduCloudDisk,txtyzy,peccxinpd,gotopan,PanjClub,kkxlzy,baicaoZY,MCPH01,bdwpzhpd,ysxb48,jdjdn1111,yggpan,MCPH086,zaihuayun,Q66Share,Oscar_4Kmovies,ucwpzy,shareAliyun,alyp_1,dianyingshare,Quark_Movies,XiangxiuNBB,ydypzyfx,ucquark,xx123pan,yingshifenxiang123,zyfb123,tyypzhpd,tianyirigeng,cloudtianyi,hdhhd21,Lsp115,oneonefivewpfx,qixingzhenren,taoxgzy,Channel_Shares_115,tyysypzypd,vip115hot,wp123zy,yunpan139,yunpan189,yunpanuc,yydf_hzl,leoziyuan,pikpakpan,Q_dongman,yoyokuakeduanju",ENABLED_PLUGINS="labi,zhizhen,shandian,duoduo,muou"
+environment=PORT=8888,CHANNELS="tgsearchers4,Aliyun_4K_Movies,bdbdndn11,yunpanx,bsbdbfjfjff,yp123pan,sbsbsnsqq,yunpanxunlei,tianyifc,BaiduCloudDisk,txtyzy,peccxinpd,gotopan,PanjClub,kkxlzy,baicaoZY,MCPH01,bdwpzhpd,ysxb48,jdjdn1111,yggpan,MCPH086,zaihuayun,Q66Share,Oscar_4Kmovies,ucwpzy,shareAliyun,alyp_1,dianyingshare,Quark_Movies,XiangxiuNBB,ydypzyfx,ucquark,xx123pan,yingshifenxiang123,zyfb123,tyypzhpd,tianyirigeng,cloudtianyi,hdhhd21,Lsp115,oneonefivewpfx,qixingzhenren,taoxgzy,Channel_Shares_115,tyysypzypd,vip115hot,wp123zy,yunpan139,yunpan189,yunpanuc,yydf_hzl,leoziyuan,pikpakpan,Q_dongman,yoyokuakeduanju",ENABLED_PLUGINS="labi,zhizhen,shandian,duoduo,muou"
 command=/home/work/pansou/pansou
 directory=/home/work/pansou
 autostart=true
@@ -485,7 +478,9 @@ curl "http://localhost:8888/api/search?kw=速度与激情&res=merge" \
         {
           "type": "baidu",
           "url": "https://pan.baidu.com/s/1abcdef",
-          "password": "1234"
+          "password": "1234",
+          "datetime": "2023-06-10T14:23:45Z",
+          "work_title": "速度与激情全集1-10"
         }
       ],
       "tags": ["电影", "合集"],
@@ -529,11 +524,37 @@ curl "http://localhost:8888/api/search?kw=速度与激情&res=merge" \
 
 **字段说明**：
 
+**SearchResult对象**：
+- `message_id`: 消息ID
+- `unique_id`: 全局唯一标识符
+- `channel`: 来源频道名称
+- `datetime`: 消息发布时间
+- `title`: 消息标题
+- `content`: 消息内容
+- `links`: 网盘链接数组
+- `tags`: 标签数组（可选）
+- `images`: TG消息中的图片链接数组（可选）
+
+**Link对象**：
+- `type`: 网盘类型（baidu、quark、aliyun等）
+- `url`: 网盘链接地址
+- `password`: 提取码/密码
+- `datetime`: 链接更新时间（可选）
+- `work_title`: 作品标题（可选）
+  - 用于区分同一消息中多个作品的链接
+  - 当一条消息包含≤4个链接时，所有链接使用相同的work_title
+  - 当一条消息包含>4个链接时，系统会智能识别每个链接对应的作品标题
+
+**MergedLink对象**：
+- `url`: 网盘链接地址
+- `password`: 提取码/密码
+- `note`: 资源说明/标题
+- `datetime`: 链接更新时间
 - `source`: 数据来源标识
   - `tg:频道名称`: 来自Telegram频道
   - `plugin:插件名`: 来自指定插件
   - `unknown`: 未知来源
-- `images`: TG消息中的图片链接数组（可选字段）
+- `images`: TG消息中的图片链接数组（可选）
   - 仅在来源为Telegram频道且消息包含图片时出现
 
 
