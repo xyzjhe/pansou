@@ -86,6 +86,7 @@ import (
 	_ "pansou/plugin/sousou"
 	_ "pansou/plugin/ash"
 	_ "pansou/plugin/qqpd"
+	_ "pansou/plugin/weibo"
 )
 
 // 全局缓存写入管理器
