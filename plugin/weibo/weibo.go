@@ -1576,14 +1576,14 @@ func extractNetworkDriveLinks(text string, datetime time.Time) []model.Link {
 	seenURLs := make(map[string]bool) // 用于去重
 
 	patterns := map[string]string{
-		"baidu":  `https?://pan\.baidu\.com/s/[a-zA-Z0-9_-]+`,
-		"quark":  `https?://pan\.quark\.cn/s/[a-zA-Z0-9]+`,
-		"aliyun": `https?://www\.alip?a?n\.com/s/[a-zA-Z0-9]+|https?://www\.aliyundrive\.com/s/[a-zA-Z0-9]+`,
-		"115":    `https?://115\.com/s/[a-zA-Z0-9]+`,
-		"tianyi": `https?://cloud\.189\.cn/(?:t/|web/share\?code=)[a-zA-Z0-9]+`,
-		"xunlei": `https?://pan\.xunlei\.com/s/[a-zA-Z0-9_-]+`,
-		"123":    `https?://www\.123pan\.com/s/[a-zA-Z0-9_-]+`,
-		"pikpak": `https?://mypikpak\.com/s/[a-zA-Z0-9]+`,
+		"baidu":  `https?://pan\.baidu\.com/s/[a-zA-Z0-9_-]+(?:\?pwd=[a-zA-Z0-9]+)?`,
+		"quark":  `https?://pan\.quark\.cn/s/[a-zA-Z0-9]+(?:\?pwd=[a-zA-Z0-9]+)?`,
+		"aliyun": `https?://www\.alip?a?n\.com/s/[a-zA-Z0-9]+(?:\?[^\s]*)?|https?://www\.aliyundrive\.com/s/[a-zA-Z0-9]+(?:\?[^\s]*)?`,
+		"115":    `https?://115\.com/s/[a-zA-Z0-9]+(?:\?[^\s]*)?`,
+		"tianyi": `https?://cloud\.189\.cn/(?:t/|web/share\?code=)[a-zA-Z0-9]+(?:&?[^\s]*)?`,
+		"xunlei": `https?://pan\.xunlei\.com/s/[a-zA-Z0-9_-]+(?:\?[^\s]*)?`,
+		"123":    `https?://www\.123pan\.com/s/[a-zA-Z0-9_-]+(?:\?[^\s]*)?`,
+		"pikpak": `https?://mypikpak\.com/s/[a-zA-Z0-9]+(?:\?[^\s]*)?`,
 	}
 
 	pwdPatterns := []string{
