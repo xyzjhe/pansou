@@ -19,10 +19,10 @@ import (
 // 常量定义
 const (
 	// 搜索URL格式 - 第1页
-	SearchURL = "https://tpirbay.xyz/search/%s/1/99/0"
+	SearchURL = "https://thpibay.xyz/search/%s/1/99/0"
 	
 	// 分页搜索URL格式 - 其他页
-	SearchPageURL = "https://tpirbay.xyz/search/%s/%d/99/0"
+	SearchPageURL = "https://thpibay.xyz/search/%s/%d/99/0"
 	
 	// 默认超时时间
 	DefaultTimeout = 10 * time.Second
@@ -258,7 +258,7 @@ func (p *ThePirateBayPlugin) searchPage(client *http.Client, encodedKeyword stri
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
 	req.Header.Set("Cache-Control", "max-age=0")
-	req.Header.Set("Referer", "https://tpirbay.xyz/")
+	req.Header.Set("Referer", "https://thpibay.xyz/")
 	
 	// 6. 发送HTTP请求（带重试机制）
 	resp, err := p.doRequestWithRetry(req, client)
@@ -371,7 +371,7 @@ func (p *ThePirateBayPlugin) parseSearchResultItem(s *goquery.Selection) *model.
 	
 	// 补全URL
 	if strings.HasPrefix(detailURL, "/") {
-		detailURL = "https://tpirbay.xyz" + detailURL
+		detailURL = "https://thpibay.xyz" + detailURL
 	}
 	
 	// 提取种子ID
