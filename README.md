@@ -28,15 +28,10 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 
 ### 使用Docker部署
 [qqpd搜索插件文档](plugin/qqpd/README.md)  
-[gying搜索插件文档](plugin/gying/README.md)  
+[gying搜索插件文档](plugin/gying/README.md) 
+[weibo搜索插件文档](plugin/weibo/README.md)  
 [常见问题总结](https://github.com/fish2018/pansou/issues/46)  
-[TG资源频道列表](https://github.com/fish2018/pansou/issues/4)
-<details>
-<summary>插件列表（请务必按需加载）</summary>
-<pre>
-export ENABLED_PLUGINS=hunhepan,jikepan,panwiki,pansearch,panta,qupansou,hdr4k,pan666,susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,discourse,yunsou,qqpd,gying,quark4k,quarksoo,sousou
-</pre>
-</details>
+[TG/QQ频道/插件/微博](https://github.com/fish2018/pansou/issues/4)
 
 #### **1、前后端集成版**
 
@@ -102,7 +97,8 @@ cd pansou
 | 环境变量 | 描述 | 默认值 | 说明 |
 |----------|------|--------|------|
 | **PORT** | 服务端口 | `8888` | 修改服务监听端口 |
-| **PROXY** | SOCKS5代理 | 无 | 如：`socks5://127.0.0.1:1080` |
+| **PROXY** | SOCKS5代理 | 无 | 如：`PROXY=socks5://127.0.0.1:1080` |
+| **HTTPS_PROXY/HTTP_PROXY** | HTTPS/HTTP代理 | 无 | 如：`HTTPS_PROXY=http://127.0.0.1:1080`,`HTTP_PROXY=http://127.0.0.1:1080` |
 | **CHANNELS** | 默认搜索的TG频道 | `tgsearchers3` | 多个频道用逗号分隔 |
 | **ENABLED_PLUGINS** | 指定启用插件，多个插件用逗号分隔 | 无 | 必须显式指定 |
 
