@@ -52,20 +52,6 @@ var DefaultAccounts = []struct {
 var StorageDir string
 
 // 初始化存储目录
-func init() {
-	cachePath := os.Getenv("CACHE_PATH")
-	if cachePath == "" {
-		cachePath = "./cache"
-	}
-	
-	StorageDir = filepath.Join(cachePath, "gying_users")
-	
-	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("⚠️  警告: 无法创建Gying存储目录 %s: %v\n", StorageDir, err)
-	} else {
-		fmt.Printf("✓ Gying存储目录: %s\n", StorageDir)
-	}
-}
 
 // HTML模板
 const HTMLTemplate = `<!DOCTYPE html>
@@ -382,10 +368,11 @@ const HTMLTemplate = `<!DOCTYPE html>
 // GyingPlugin 插件结构
 type GyingPlugin struct {
 	*plugin.BaseAsyncPlugin
-	users    sync.Map // 内存缓存：hash -> *User
-	scrapers sync.Map // cloudscraper实例缓存：hash -> *cloudscraper.Scraper
-	mu       sync.RWMutex
+	users       sync.Map // 内存缓存：hash -> *User
+	scrapers    sync.Map // cloudscraper实例缓存：hash -> *cloudscraper.Scraper
+	mu          sync.RWMutex
 	searchCache sync.Map // 插件级缓存：关键词->model.PluginSearchResult
+	initialized bool     // 初始化状态标记
 }
 
 // User 用户数据结构
@@ -439,10 +426,25 @@ func init() {
 		BaseAsyncPlugin: plugin.NewBaseAsyncPlugin("gying", 3),
 	}
 
+	plugin.RegisterGlobalPlugin(p)
+}
+
+// Initialize 实现 InitializablePlugin 接口，延迟初始化插件
+func (p *GyingPlugin) Initialize() error {
+	if p.initialized {
+		return nil
+	}
+
+	// 初始化存储目录路径
+	cachePath := os.Getenv("CACHE_PATH")
+	if cachePath == "" {
+		cachePath = "./cache"
+	}
+	StorageDir = filepath.Join(cachePath, "gying_users")
+
 	// 初始化存储目录
 	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("[Gying] 创建存储目录失败: %v\n", err)
-		return
+		return fmt.Errorf("创建存储目录失败: %v", err)
 	}
 
 	// 加载所有用户到内存
@@ -461,7 +463,8 @@ func init() {
 	// 启动session保活任务（防止session超时）
 	go p.startSessionKeepAlive()
 
-	plugin.RegisterGlobalPlugin(p)
+	p.initialized = true
+	return nil
 }
 
 // ============ 插件接口实现 ============
