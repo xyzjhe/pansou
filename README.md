@@ -400,7 +400,7 @@ curl -X POST http://localhost:8888/api/auth/logout
 | plugins | string[] | 否 | 指定搜索的插件列表，不指定则搜索全部插件 |
 | cloud_types | string[] | 否 | 指定返回的网盘类型列表，支持：baidu、aliyun、quark、tianyi、uc、mobile、115、pikpak、xunlei、123、magnet、ed2k，不指定则返回所有类型 |
 | ext | object | 否 | 扩展参数，用于传递给插件的自定义参数，如{"title_en":"English Title", "is_all":true} |
-| filter | object | 否 | 过滤配置，用于过滤返回结果。格式：{"include":["关键词1","关键词2"],"exclude":["排除词1","排除词2"]}。include为包含关键词列表（OR关系），exclude为排除关键词列表（AND关系） |
+| filter | object | 否 | 过滤配置，用于过滤返回结果。格式：{"include":["关键词1","关键词2"],"exclude":["排除词1","排除词2"]}。include为包含关键词列表（OR关系），exclude为排除关键词列表（OR关系） |
 
 **GET请求参数**：
 
@@ -447,7 +447,7 @@ curl -X POST http://localhost:8888/api/search \
     "res": "merge"
   }'
 
-# 使用过滤器（只返回包含“合集”或“全集”，且不包含“预告”的结果）
+# 使用过滤器（只返回包含“合集”或“全集”，且不包含“预告”或“花絮”的结果）
 curl -X POST http://localhost:8888/api/search \
   -H "Content-Type: application/json" \
   -d '{
