@@ -78,10 +78,13 @@ func SetupRouter(searchService *service.SearchService) *gin.Engine {
 	}
 	
 	// 注册插件的Web路由（如果插件实现了PluginWithWebHandler接口）
-	allPlugins := plugin.GetRegisteredPlugins()
-	for _, p := range allPlugins {
-		if webPlugin, ok := p.(plugin.PluginWithWebHandler); ok {
-			webPlugin.RegisterWebRoutes(r.Group(""))
+	// 只有当插件功能启用且插件在启用列表中时才注册路由
+	if config.AppConfig.AsyncPluginEnabled && searchService != nil && searchService.GetPluginManager() != nil {
+		enabledPlugins := searchService.GetPluginManager().GetPlugins()
+		for _, p := range enabledPlugins {
+			if webPlugin, ok := p.(plugin.PluginWithWebHandler); ok {
+				webPlugin.RegisterWebRoutes(r.Group(""))
+			}
 		}
 	}
 	

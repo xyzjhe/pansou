@@ -39,24 +39,6 @@ const (
 var StorageDir string
 
 // 初始化存储目录
-func init() {
-	// 直接从环境变量读取缓存路径（不依赖config.AppConfig，避免初始化顺序问题）
-	cachePath := os.Getenv("CACHE_PATH")
-	if cachePath == "" {
-		// 如果环境变量未设置，使用默认值
-		cachePath = "./cache"
-	}
-
-	// 构建QQPD用户数据目录路径
-	StorageDir = filepath.Join(cachePath, "qqpd_users")
-
-	// 确保目录存在
-	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("⚠️  警告: 无法创建QQPD存储目录 %s: %v\n", StorageDir, err)
-	} else {
-		fmt.Printf("✓ QQPD存储目录: %s\n", StorageDir)
-	}
-}
 
 // HTML模板（完整的管理页面）
 const HTMLTemplate = `<!DOCTYPE html>
@@ -494,8 +476,9 @@ languan8K115"></textarea>
 // QQPDPlugin 插件结构
 type QQPDPlugin struct {
 	*plugin.BaseAsyncPlugin
-	users sync.Map // 内存缓存：hash -> *User
-	mu    sync.RWMutex
+	users       sync.Map // 内存缓存：hash -> *User
+	mu          sync.RWMutex
+	initialized bool // 初始化状态标记
 }
 
 // User 用户数据结构
@@ -530,10 +513,25 @@ func init() {
 		BaseAsyncPlugin: plugin.NewBaseAsyncPlugin("qqpd", 3),
 	}
 
+	plugin.RegisterGlobalPlugin(p)
+}
+
+// Initialize 实现 InitializablePlugin 接口，延迟初始化插件
+func (p *QQPDPlugin) Initialize() error {
+	if p.initialized {
+		return nil
+	}
+
+	// 初始化存储目录路径
+	cachePath := os.Getenv("CACHE_PATH")
+	if cachePath == "" {
+		cachePath = "./cache"
+	}
+	StorageDir = filepath.Join(cachePath, "qqpd_users")
+
 	// 初始化存储目录
 	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("[QQPD] 创建存储目录失败: %v\n", err)
-		return
+		return fmt.Errorf("创建存储目录失败: %v", err)
 	}
 
 	// 加载所有用户到内存
@@ -542,7 +540,8 @@ func init() {
 	// 启动定期清理任务
 	go p.startCleanupTask()
 
-	plugin.RegisterGlobalPlugin(p)
+	p.initialized = true
+	return nil
 }
 
 // ============ 插件接口实现 ============

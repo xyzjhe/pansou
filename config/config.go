@@ -17,6 +17,8 @@ type Config struct {
 	Port               string
 	ProxyURL           string
 	UseProxy           bool
+	HTTPProxyURL       string
+	HTTPSProxyURL      string
 	// 缓存相关配置
 	CacheEnabled    bool
 	CachePath       string
@@ -68,6 +70,8 @@ func Init() {
 		Port:               getPort(),
 		ProxyURL:           proxyURL,
 		UseProxy:           proxyURL != "",
+		HTTPProxyURL:       getHTTPProxyURL(),
+		HTTPSProxyURL:      getHTTPSProxyURL(),
 		// 缓存相关配置
 		CacheEnabled:    getCacheEnabled(),
 		CachePath:       getCachePath(),
@@ -190,9 +194,22 @@ func getPort() string {
 	return port
 }
 
-// 从环境变量获取SOCKS5代理URL，如果未设置则返回空字符串
 func getProxyURL() string {
 	return os.Getenv("PROXY")
+}
+
+func getHTTPProxyURL() string {
+	if proxyURL := os.Getenv("HTTP_PROXY"); proxyURL != "" {
+		return proxyURL
+	}
+	return os.Getenv("http_proxy")
+}
+
+func getHTTPSProxyURL() string {
+	if proxyURL := os.Getenv("HTTPS_PROXY"); proxyURL != "" {
+		return proxyURL
+	}
+	return os.Getenv("https_proxy")
 }
 
 // 从环境变量获取是否启用缓存，如果未设置则默认启用

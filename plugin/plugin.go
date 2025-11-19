@@ -52,6 +52,16 @@ type PluginWithWebHandler interface {
 	RegisterWebRoutes(router *gin.RouterGroup)
 }
 
+// InitializablePlugin 支持延迟初始化的插件接口
+// 插件可以实现此接口，将初始化逻辑延迟到真正被使用时执行
+type InitializablePlugin interface {
+	AsyncSearchPlugin // 继承搜索插件接口
+	
+	// Initialize 执行插件初始化（创建目录、加载数据等）
+	// 只会被调用一次，应该是幂等的
+	Initialize() error
+}
+
 // ============================================================
 // 第二部分：全局变量和注册表
 // ============================================================
@@ -167,6 +177,14 @@ func NewPluginManager() *PluginManager {
 
 // RegisterPlugin 注册异步插件
 func (pm *PluginManager) RegisterPlugin(plugin AsyncSearchPlugin) {
+	// 如果插件支持延迟初始化，先执行初始化
+	if initPlugin, ok := plugin.(InitializablePlugin); ok {
+		if err := initPlugin.Initialize(); err != nil {
+			fmt.Printf("[PluginManager] 插件 %s 初始化失败: %v，跳过注册\n", plugin.Name(), err)
+			return
+		}
+	}
+	
 	pm.plugins = append(pm.plugins, plugin)
 }
 

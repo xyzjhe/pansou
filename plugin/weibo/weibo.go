@@ -34,20 +34,6 @@ const (
 
 var StorageDir string
 
-func init() {
-	cachePath := os.Getenv("CACHE_PATH")
-	if cachePath == "" {
-		cachePath = "./cache"
-	}
-	
-	StorageDir = filepath.Join(cachePath, "weibo_users")
-	
-	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("⚠️  警告: 无法创建Weibo存储目录 %s: %v\n", StorageDir, err)
-	} else {
-		fmt.Printf("✓ Weibo存储目录: %s\n", StorageDir)
-	}
-}
 
 const HTMLTemplate = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -422,8 +408,9 @@ const HTMLTemplate = `<!DOCTYPE html>
 
 type WeiboPlugin struct {
 	*plugin.BaseAsyncPlugin
-	users sync.Map
-	mu    sync.RWMutex
+	users       sync.Map
+	mu          sync.RWMutex
+	initialized bool
 }
 
 type User struct {
@@ -452,15 +439,31 @@ func init() {
 		BaseAsyncPlugin: plugin.NewBaseAsyncPlugin("weibo", 3),
 	}
 
+	plugin.RegisterGlobalPlugin(p)
+}
+
+// Initialize 实现 InitializablePlugin 接口，延迟初始化插件
+func (p *WeiboPlugin) Initialize() error {
+	if p.initialized {
+		return nil
+	}
+
+	// 初始化存储目录路径
+	cachePath := os.Getenv("CACHE_PATH")
+	if cachePath == "" {
+		cachePath = "./cache"
+	}
+	StorageDir = filepath.Join(cachePath, "weibo_users")
+
 	if err := os.MkdirAll(StorageDir, 0755); err != nil {
-		fmt.Printf("[Weibo] 创建存储目录失败: %v\n", err)
-		return
+		return fmt.Errorf("创建存储目录失败: %v", err)
 	}
 
 	p.loadAllUsers()
 	go p.startCleanupTask()
 
-	plugin.RegisterGlobalPlugin(p)
+	p.initialized = true
+	return nil
 }
 
 func (p *WeiboPlugin) RegisterWebRoutes(router *gin.RouterGroup) {

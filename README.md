@@ -28,15 +28,10 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 
 ### 使用Docker部署
 [qqpd搜索插件文档](plugin/qqpd/README.md)  
-[gying搜索插件文档](plugin/gying/README.md)  
+[gying搜索插件文档](plugin/gying/README.md)   
+[weibo搜索插件文档](plugin/weibo/README.md)   
 [常见问题总结](https://github.com/fish2018/pansou/issues/46)  
-[TG资源频道列表](https://github.com/fish2018/pansou/issues/4)
-<details>
-<summary>插件列表（请务必按需加载）</summary>
-<pre>
-export ENABLED_PLUGINS=hunhepan,jikepan,panwiki,pansearch,panta,qupansou,hdr4k,pan666,susu,thepiratebay,wanou,xuexizhinan,panyq,zhizhen,labi,muou,ouge,shandian,duoduo,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,libvio,leijing,xb6v,xys,ddys,hdmoli,yuhuage,u3c3,javdb,clxiong,jutoushe,sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,discourse,yunsou,qqpd,gying,quark4k,quarksoo,sousou
-</pre>
-</details>
+[TG/QQ频道/插件/微博](https://github.com/fish2018/pansou/issues/4)
 
 #### **1、前后端集成版**
 
@@ -102,7 +97,8 @@ cd pansou
 | 环境变量 | 描述 | 默认值 | 说明 |
 |----------|------|--------|------|
 | **PORT** | 服务端口 | `8888` | 修改服务监听端口 |
-| **PROXY** | SOCKS5代理 | 无 | 如：`socks5://127.0.0.1:1080` |
+| **PROXY** | SOCKS5代理 | 无 | 如：`PROXY=socks5://127.0.0.1:1080` |
+| **HTTPS_PROXY/HTTP_PROXY** | HTTPS/HTTP代理 | 无 | 如：`HTTPS_PROXY=http://127.0.0.1:1080`,`HTTP_PROXY=http://127.0.0.1:1080` |
 | **CHANNELS** | 默认搜索的TG频道 | `tgsearchers3` | 多个频道用逗号分隔 |
 | **ENABLED_PLUGINS** | 指定启用插件，多个插件用逗号分隔 | 无 | 必须显式指定 |
 
@@ -404,7 +400,7 @@ curl -X POST http://localhost:8888/api/auth/logout
 | plugins | string[] | 否 | 指定搜索的插件列表，不指定则搜索全部插件 |
 | cloud_types | string[] | 否 | 指定返回的网盘类型列表，支持：baidu、aliyun、quark、tianyi、uc、mobile、115、pikpak、xunlei、123、magnet、ed2k，不指定则返回所有类型 |
 | ext | object | 否 | 扩展参数，用于传递给插件的自定义参数，如{"title_en":"English Title", "is_all":true} |
-| filter | object | 否 | 过滤配置，用于过滤返回结果。格式：{"include":["关键词1","关键词2"],"exclude":["排除词1","排除词2"]}。include为包含关键词列表（OR关系），exclude为排除关键词列表（AND关系） |
+| filter | object | 否 | 过滤配置，用于过滤返回结果。格式：{"include":["关键词1","关键词2"],"exclude":["排除词1","排除词2"]}。include为包含关键词列表（OR关系），exclude为排除关键词列表（OR关系） |
 
 **GET请求参数**：
 
@@ -451,7 +447,7 @@ curl -X POST http://localhost:8888/api/search \
     "res": "merge"
   }'
 
-# 使用过滤器（只返回包含“合集”或“全集”，且不包含“预告”的结果）
+# 使用过滤器（只返回包含“合集”或“全集”，且不包含“预告”或“花絮”的结果）
 curl -X POST http://localhost:8888/api/search \
   -H "Content-Type: application/json" \
   -d '{
