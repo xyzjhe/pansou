@@ -28,8 +28,8 @@ PanSou 还提供了一个基于 [Model Context Protocol (MCP)](https://modelcont
 
 ### 使用Docker部署
 [qqpd搜索插件文档](plugin/qqpd/README.md)  
-[gying搜索插件文档](plugin/gying/README.md) 
-[weibo搜索插件文档](plugin/weibo/README.md)  
+[gying搜索插件文档](plugin/gying/README.md)   
+[weibo搜索插件文档](plugin/weibo/README.md)   
 [常见问题总结](https://github.com/fish2018/pansou/issues/46)  
 [TG/QQ频道/插件/微博](https://github.com/fish2018/pansou/issues/4)
 
