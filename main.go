@@ -242,9 +242,28 @@ func printServiceInfo(port string, pluginManager *plugin.PluginManager) {
 	fmt.Printf("服务器启动在 http://localhost:%s\n", port)
 
 	// 输出代理信息
-	if config.AppConfig.UseProxy {
-		fmt.Printf("使用SOCKS5代理: %s\n", config.AppConfig.ProxyURL)
-	} else {
+	hasProxy := false
+	if config.AppConfig.ProxyURL != "" {
+		proxyType := "代理"
+		if strings.HasPrefix(config.AppConfig.ProxyURL, "socks5://") {
+			proxyType = "SOCKS5代理"
+		} else if strings.HasPrefix(config.AppConfig.ProxyURL, "http://") {
+			proxyType = "HTTP代理"
+		} else if strings.HasPrefix(config.AppConfig.ProxyURL, "https://") {
+			proxyType = "HTTPS代理"
+		}
+		fmt.Printf("使用%s (PROXY): %s\n", proxyType, config.AppConfig.ProxyURL)
+		hasProxy = true
+	}
+	if config.AppConfig.HTTPProxyURL != "" {
+		fmt.Printf("使用HTTP代理 (HTTP_PROXY/http_proxy): %s\n", config.AppConfig.HTTPProxyURL)
+		hasProxy = true
+	}
+	if config.AppConfig.HTTPSProxyURL != "" {
+		fmt.Printf("使用HTTPS代理 (HTTPS_PROXY/https_proxy): %s\n", config.AppConfig.HTTPSProxyURL)
+		hasProxy = true
+	}
+	if !hasProxy {
 		fmt.Println("未使用代理")
 	}
 
