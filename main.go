@@ -88,6 +88,7 @@ import (
 	_ "pansou/plugin/qqpd"
 	_ "pansou/plugin/weibo"
 	_ "pansou/plugin/feikuai"
+	_ "pansou/plugin/kkmao"
 )
 
 // 全局缓存写入管理器
