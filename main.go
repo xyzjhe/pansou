@@ -89,6 +89,7 @@ import (
 	_ "pansou/plugin/weibo"
 	_ "pansou/plugin/feikuai"
 	_ "pansou/plugin/kkmao"
+	_ "pansou/plugin/alupan"
 )
 
 // 全局缓存写入管理器
