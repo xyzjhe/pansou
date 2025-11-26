@@ -91,6 +91,7 @@ import (
 	_ "pansou/plugin/kkmao"
 	_ "pansou/plugin/alupan"
 	_ "pansou/plugin/ypfxw"
+	_ "pansou/plugin/mikuclub"
 )
 
 // 全局缓存写入管理器
