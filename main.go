@@ -93,6 +93,8 @@ import (
 	_ "pansou/plugin/ypfxw"
 	_ "pansou/plugin/mikuclub"
 	_ "pansou/plugin/daishudj"
+	_ "pansou/plugin/dyyj"
+	_ "pansou/plugin/meitizy"
 )
 
 // 全局缓存写入管理器
