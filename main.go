@@ -96,6 +96,7 @@ import (
 	_ "pansou/plugin/dyyj"
 	_ "pansou/plugin/meitizy"
 	_ "pansou/plugin/jsnoteclub"
+	_ "pansou/plugin/mizixing"
 )
 
 // 全局缓存写入管理器
