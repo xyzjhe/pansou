@@ -99,6 +99,9 @@ import (
 	_ "pansou/plugin/mizixing"
 	_ "pansou/plugin/lou1"
 	_ "pansou/plugin/yiove"
+	_ "pansou/plugin/zxzj"
+	_ "pansou/plugin/qingying"
+	_ "pansou/plugin/kkv"
 )
 
 // 全局缓存写入管理器
