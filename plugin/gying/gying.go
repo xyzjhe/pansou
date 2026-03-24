@@ -312,7 +312,7 @@ const HTMLTemplate = `<!DOCTYPE html>
                     document.getElementById('logged-in-view').classList.remove('hidden');
                     document.getElementById('not-logged-in-view').classList.add('hidden');
                     
-                    document.getElementById('username-display').textContent = data.username_masked || '-';
+                    document.getElementById('username-display').textContent = data.username || '-';
                     document.getElementById('login-time').textContent = data.login_time || '-';
                     document.getElementById('expire-info').textContent = '剩余 ' + (data.expires_in_days || 0) + ' 天';
                 } else {
@@ -448,8 +448,7 @@ type GyingPlugin struct {
 // User 用户数据结构
 type User struct {
 	Hash              string    `json:"hash"`
-	Username          string    `json:"username"`           // 原始用户名（存储）
-	UsernameMasked    string    `json:"username_masked"`    // 脱敏用户名（显示）
+	Username          string    `json:"username"`           // 用户名
 	EncryptedPassword string    `json:"encrypted_password"` // 加密后的密码（用于重启恢复）
 	Cookie            string    `json:"cookie"`             // 登录Cookie字符串（仅供参考）
 	Status            string    `json:"status"`             // pending/active/expired
@@ -828,7 +827,7 @@ func (p *GyingPlugin) loadAllUsers() {
 		// 过滤条件：status必须是active
 		if user.Status != "active" {
 			if DebugLog {
-				fmt.Printf("[Gying] ⏭️  跳过用户 %s: status=%s (非active)\n", user.UsernameMasked, user.Status)
+				fmt.Printf("[Gying] ⏭️  跳过用户 %s: status=%s (非active)\n", user.Username, user.Status)
 			}
 			skippedInactive++
 			continue
@@ -844,7 +843,7 @@ func (p *GyingPlugin) loadAllUsers() {
 			if user.EncryptedPassword != "" {
 				hasPassword = "有"
 			}
-			fmt.Printf("[Gying] ✅ 已加载用户 %s (密码:%s, 将在初始化时登录)\n", user.UsernameMasked, hasPassword)
+			fmt.Printf("[Gying] ✅ 已加载用户 %s (密码:%s, 将在初始化时登录)\n", user.Username, hasPassword)
 		}
 	}
 
@@ -882,13 +881,13 @@ func (p *GyingPlugin) initDefaultAccounts() {
 		fmt.Printf("[Gying] 发现 %d 个需要恢复的用户（使用加密密码重新登录）\n", len(usersToRestore))
 		for i, user := range usersToRestore {
 			if DebugLog {
-				fmt.Printf("[Gying] [恢复用户 %d/%d] 处理: %s\n", i+1, len(usersToRestore), user.UsernameMasked)
+				fmt.Printf("[Gying] [恢复用户 %d/%d] 处理: %s\n", i+1, len(usersToRestore), user.Username)
 			}
 
 			// 解密密码
 			password, err := p.decryptPassword(user.EncryptedPassword)
 			if err != nil {
-				fmt.Printf("[Gying] ❌ 用户 %s 解密密码失败: %v\n", user.UsernameMasked, err)
+				fmt.Printf("[Gying] ❌ 用户 %s 解密密码失败: %v\n", user.Username, err)
 				continue
 			}
 
@@ -907,7 +906,7 @@ func (p *GyingPlugin) initOrRestoreUser(username, password, source string) {
 	_, scraperExists := p.scrapers.Load(hash)
 	if scraperExists {
 		if DebugLog {
-			fmt.Printf("[Gying] 用户 %s scraper已存在，跳过\n", p.maskUsername(username))
+			fmt.Printf("[Gying] 用户 %s scraper已存在，跳过\n", username)
 		}
 		return
 	}
@@ -937,7 +936,6 @@ func (p *GyingPlugin) initOrRestoreUser(username, password, source string) {
 	user := &User{
 		Hash:              hash,
 		Username:          username,
-		UsernameMasked:    p.maskUsername(username),
 		EncryptedPassword: encryptedPassword,
 		Cookie:            cookie,
 		Status:            "active",
@@ -955,7 +953,7 @@ func (p *GyingPlugin) initOrRestoreUser(username, password, source string) {
 		return
 	}
 
-	fmt.Printf("[Gying] ✅ 账户 %s 初始化成功 (来源:%s)\n", user.UsernameMasked, source)
+	fmt.Printf("[Gying] ✅ 账户 %s 初始化成功 (来源:%s)\n", user.Username, source)
 }
 
 // getUserByHash 获取用户
@@ -1089,7 +1087,7 @@ func (p *GyingPlugin) handleGetStatus(c *gin.Context, hash string) {
 		"hash":            hash,
 		"logged_in":       loggedIn,
 		"status":          user.Status,
-		"username_masked": user.UsernameMasked,
+		"username":        user.Username,
 		"login_time":      user.LoginAt.Format("2006-01-02 15:04:05"),
 		"expire_time":     user.ExpireAt.Format("2006-01-02 15:04:05"),
 		"expires_in_days": expiresInDays,
@@ -1153,7 +1151,6 @@ func (p *GyingPlugin) handleLogin(c *gin.Context, hash string, reqData map[strin
 	user := &User{
 		Hash:              hash,
 		Username:          username,
-		UsernameMasked:    p.maskUsername(username),
 		EncryptedPassword: encryptedPassword,
 		Cookie:            cookie,
 		Status:            "active",
@@ -1172,8 +1169,8 @@ func (p *GyingPlugin) handleLogin(c *gin.Context, hash string, reqData map[strin
 	}
 
 	respondSuccess(c, "登录成功", gin.H{
-		"status":          "active",
-		"username_masked": user.UsernameMasked,
+		"status":   "active",
+		"username": user.Username,
 	})
 }
 
@@ -1853,7 +1850,7 @@ func min(a, b int) int {
 // reloginUser 重新登录指定用户
 func (p *GyingPlugin) reloginUser(user *User) error {
 	if DebugLog {
-		fmt.Printf("[Gying] 🔄 开始重新登录用户: %s\n", user.UsernameMasked)
+		fmt.Printf("[Gying] 🔄 开始重新登录用户: %s\n", user.Username)
 	}
 
 	// 解密密码
@@ -1890,7 +1887,7 @@ func (p *GyingPlugin) reloginUser(user *User) error {
 	}
 
 	if DebugLog {
-		fmt.Printf("[Gying] ✅ 用户 %s 重新登录成功\n", user.UsernameMasked)
+		fmt.Printf("[Gying] ✅ 用户 %s 重新登录成功\n", user.Username)
 	}
 
 	return nil
@@ -1915,14 +1912,14 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 
 			if !exists {
 				if DebugLog {
-					fmt.Printf("[Gying] 用户 %s 没有scraper实例，尝试使用已保存的cookie创建\n", u.UsernameMasked)
+					fmt.Printf("[Gying] 用户 %s 没有scraper实例，尝试使用已保存的cookie创建\n", u.Username)
 				}
 
 				// 使用已保存的cookie创建scraper实例（关键！）
 				newScraper, err := p.createScraperWithCookies(u.Cookie)
 				if err != nil {
 					if DebugLog {
-						fmt.Printf("[Gying] 为用户 %s 创建scraper失败: %v\n", u.UsernameMasked, err)
+						fmt.Printf("[Gying] 为用户 %s 创建scraper失败: %v\n", u.Username, err)
 					}
 					return
 				}
@@ -1932,14 +1929,14 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 				scraper = newScraper
 
 				if DebugLog {
-					fmt.Printf("[Gying] 已为用户 %s 恢复scraper实例（含cookie）\n", u.UsernameMasked)
+					fmt.Printf("[Gying] 已为用户 %s 恢复scraper实例（含cookie）\n", u.Username)
 				}
 			} else {
 				var ok bool
 				scraper, ok = scraperVal.(*cloudscraper.Scraper)
 				if !ok || scraper == nil {
 					if DebugLog {
-						fmt.Printf("[Gying] 用户 %s scraper实例无效，跳过\n", u.UsernameMasked)
+						fmt.Printf("[Gying] 用户 %s scraper实例无效，跳过\n", u.Username)
 					}
 					return
 				}
@@ -1948,7 +1945,7 @@ func (p *GyingPlugin) executeSearchTasks(users []*User, keyword string) []model.
 			results, err := p.searchWithScraperWithRetry(keyword, scraper, u)
 			if err != nil {
 				if DebugLog {
-					fmt.Printf("[Gying] 用户 %s 搜索失败（已重试）: %v\n", u.UsernameMasked, err)
+					fmt.Printf("[Gying] 用户 %s 搜索失败（已重试）: %v\n", u.Username, err)
 				}
 				return
 			}
@@ -1972,7 +1969,7 @@ func (p *GyingPlugin) searchWithScraperWithRetry(keyword string, scraper *clouds
 	// 检测是否为403错误
 	if err != nil && strings.Contains(err.Error(), "403") {
 		if DebugLog {
-			fmt.Printf("[Gying] ⚠️  检测到403错误，尝试重新登录用户 %s\n", user.UsernameMasked)
+			fmt.Printf("[Gying] ⚠️  检测到403错误，尝试重新登录用户 %s\n", user.Username)
 		}
 
 		// 尝试重新登录
@@ -2647,15 +2644,6 @@ func (p *GyingPlugin) generateHash(username string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// maskUsername 脱敏用户名
-func (p *GyingPlugin) maskUsername(username string) string {
-	runes := []rune(username)
-	if len(runes) == 0 {
-		return ""
-	}
-	return strings.Repeat("*", len(runes))
-}
-
 // isHexString 判断是否为十六进制
 func (p *GyingPlugin) isHexString(s string) bool {
 	for _, c := range s {
@@ -2795,7 +2783,7 @@ func (p *GyingPlugin) keepAllSessionsAlive() {
 					fmt.Printf("[Gying] 💓 Session保活成功: %s (状态码: %d)\n", username, resp.StatusCode)
 				}
 			}
-		}(scraper, user.UsernameMasked, p.getBaseURL()+"/")
+		}(scraper, user.Username, p.getBaseURL()+"/")
 
 		count++
 		return true
