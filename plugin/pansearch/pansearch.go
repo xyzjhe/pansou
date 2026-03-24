@@ -24,18 +24,18 @@ var (
 
 	// 从__NEXT_DATA__脚本中提取数据的正则表达式
 	nextDataRegex = regexp.MustCompile(`<script id="__NEXT_DATA__" type="application/json">(.*?)</script>`)
-	
+
 	// 缓存相关变量
-	searchResultCache = sync.Map{}
+	searchResultCache  = sync.Map{}
 	lastCacheCleanTime = time.Now()
-	cacheTTL = 1 * time.Hour
+	cacheTTL           = 1 * time.Hour
 )
 
 // 在init函数中注册插件
 func init() {
 	// 使用全局超时时间创建插件实例并注册
 	plugin.RegisterGlobalPlugin(NewPanSearchPlugin())
-	
+
 	// 启动缓存清理goroutine
 	go startCacheCleaner()
 }
@@ -45,7 +45,7 @@ func startCacheCleaner() {
 	// 每小时清理一次缓存
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		// 清空所有缓存
 		searchResultCache = sync.Map{}
@@ -102,17 +102,18 @@ type PanSearchAsyncPlugin struct {
 	maxResults    int
 	maxConcurrent int
 	retries       int
-	workerPool    *WorkerPool // 添加工作池
 }
 
 // WorkerPool 工作池结构
 type WorkerPool struct {
-	tasks   chan Task
-	results chan TaskResult
-	errors  chan error
-	wg      sync.WaitGroup
-	closed  atomic.Bool // 添加原子标志来标记工作池是否已关闭
-	mu      sync.Mutex  // 添加互斥锁保护提交操作
+	tasks       chan Task
+	results     chan TaskResult
+	errors      chan error
+	workerCount int
+	wg          sync.WaitGroup
+	closed      atomic.Bool
+	mu          sync.Mutex
+	closeOnce   sync.Once
 }
 
 // Task 工作任务
@@ -129,17 +130,25 @@ type TaskResult struct {
 }
 
 // NewWorkerPool 创建新的工作池
-func NewWorkerPool(size int) *WorkerPool {
+func NewWorkerPool(workerCount, bufferSize int) *WorkerPool {
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	if bufferSize < workerCount {
+		bufferSize = workerCount
+	}
+
 	return &WorkerPool{
-		tasks:   make(chan Task, size*3),       // 增加任务通道容量
-		results: make(chan TaskResult, size*3), // 增加结果通道容量
-		errors:  make(chan error, size*3),      // 增加错误通道容量
+		tasks:       make(chan Task, bufferSize),
+		results:     make(chan TaskResult, bufferSize),
+		errors:      make(chan error, bufferSize),
+		workerCount: workerCount,
 	}
 }
 
 // Start 启动工作池
 func (wp *WorkerPool) Start(ctx context.Context, handler func(ctx context.Context, task Task) (TaskResult, error)) {
-	for i := 0; i < cap(wp.tasks); i++ {
+	for i := 0; i < wp.workerCount; i++ {
 		wp.wg.Add(1)
 		go func() {
 			defer wp.wg.Done()
@@ -154,18 +163,14 @@ func (wp *WorkerPool) Start(ctx context.Context, handler func(ctx context.Contex
 					if err != nil {
 						select {
 						case wp.errors <- err:
-							// 成功发送错误
-						default:
-							// 通道可能已关闭，忽略错误
-							fmt.Printf("无法发送错误: %v\n", err)
+						case <-ctx.Done():
+							return
 						}
 					} else {
 						select {
 						case wp.results <- result:
-							// 成功发送结果
-						default:
-							// 通道可能已关闭，忽略结果
-							fmt.Printf("无法发送结果\n")
+						case <-ctx.Done():
+							return
 						}
 					}
 
@@ -182,52 +187,26 @@ func (wp *WorkerPool) Submit(task Task) bool {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
 
-	// 检查工作池是否已关闭
 	if wp.closed.Load() {
 		return false
 	}
 
-	select {
-	case wp.tasks <- task:
-		return true
-	default:
-		// 如果通道已满，返回失败
-		return false
-	}
+	wp.tasks <- task
+	return true
 }
 
 // Close 关闭工作池
 func (wp *WorkerPool) Close() {
-	wp.mu.Lock()
-	if !wp.closed.Load() {
+	wp.closeOnce.Do(func() {
+		wp.mu.Lock()
 		wp.closed.Store(true)
 		close(wp.tasks)
-	}
-	wp.mu.Unlock()
+		wp.mu.Unlock()
 
-	wp.wg.Wait()
-
-	// 安全关闭结果和错误通道
-	wp.mu.Lock()
-	defer wp.mu.Unlock()
-
-	select {
-	case _, ok := <-wp.results:
-		if ok {
-			close(wp.results)
-		}
-	default:
+		wp.wg.Wait()
 		close(wp.results)
-	}
-
-	select {
-	case _, ok := <-wp.errors:
-		if ok {
-			close(wp.errors)
-		}
-	default:
 		close(wp.errors)
-	}
+	})
 }
 
 // NewPanSearchPlugin 创建新的盘搜异步插件
@@ -241,7 +220,6 @@ func NewPanSearchPlugin() *PanSearchAsyncPlugin {
 		maxResults:      MaxResults,
 		maxConcurrent:   maxConcurrent,
 		retries:         MaxRetries,
-		workerPool:      NewWorkerPool(maxConcurrent), // 初始化工作池
 	}
 
 	// 初始化时预热获取 buildId
@@ -548,13 +526,13 @@ func (p *PanSearchAsyncPlugin) doSearch(client *http.Client, keyword string, ext
 	remainingResults := min(total-PageSize, p.maxResults-PageSize)
 	if remainingResults <= 0 {
 		results := p.convertResults(allResults, keyword)
-		
+
 		// 缓存结果
 		searchResultCache.Store(keyword, cachedResponse{
 			results:   results,
 			timestamp: time.Now(),
 		})
-		
+
 		return results, nil
 	}
 
@@ -564,21 +542,21 @@ func (p *PanSearchAsyncPlugin) doSearch(client *http.Client, keyword string, ext
 	// 如果只需要获取少量页面，直接返回
 	if neededPages <= 0 {
 		results := p.convertResults(allResults, keyword)
-		
+
 		// 缓存结果
 		searchResultCache.Store(keyword, cachedResponse{
 			results:   results,
 			timestamp: time.Now(),
 		})
-		
+
 		return results, nil
 	}
 
 	// 根据实际页数确定并发数，但不超过最大并发数
 	actualConcurrent := min(neededPages, p.maxConcurrent)
 
-	// 创建适合实际并发数的工作池
-	p.workerPool = NewWorkerPool(actualConcurrent)
+	// 工作池是单次请求的局部资源，避免并发请求共享状态
+	pool := NewWorkerPool(actualConcurrent, neededPages)
 
 	// 创建上下文用于管理所有请求
 	ctx, cancel := context.WithTimeout(context.Background(), p.timeout*2)
@@ -588,7 +566,7 @@ func (p *PanSearchAsyncPlugin) doSearch(client *http.Client, keyword string, ext
 	needRefreshBuildId := &atomic.Bool{}
 
 	// 启动工作池
-	p.workerPool.Start(ctx, func(ctx context.Context, task Task) (TaskResult, error) {
+	pool.Start(ctx, func(ctx context.Context, task Task) (TaskResult, error) {
 		var pageResults []PanSearchItem
 		var err error
 
@@ -664,15 +642,8 @@ func (p *PanSearchAsyncPlugin) doSearch(client *http.Client, keyword string, ext
 	// 提交任务计数器
 	submittedTasks := 0
 
-	// 简化批次处理逻辑，考虑到最多只有99页需要获取（第一页已经获取）
-	// 使用两个批次：每批次最多50页，避免一次性提交过多任务
-	batchSize := (neededPages + 1) / 2 // 将总页数分成两批
-	if batchSize < 1 {
-		batchSize = neededPages // 如果页数很少，就一次性提交所有任务
-	}
-
 	// 提交所有任务
-	for i := 0; i < neededPages; i += batchSize {
+	for i := 0; i < neededPages; i++ {
 		// 检查上下文是否已取消
 		select {
 		case <-ctx.Done():
@@ -682,46 +653,26 @@ func (p *PanSearchAsyncPlugin) doSearch(client *http.Client, keyword string, ext
 			// 继续执行
 		}
 
-		end := i + batchSize
-		if end > neededPages {
-			end = neededPages
-		}
-
-		// 提交一批任务
-		for j := i; j < end; j++ {
-			offset := PageSize + j*PageSize
-			if offset < p.maxResults {
-				task := Task{
-					keyword: keyword,
-					offset:  offset,
-					baseURL: baseURL,
-				}
-
-				// 尝试提交任务，如果失败则跳出循环
-				if !p.workerPool.Submit(task) {
-					fmt.Printf("无法提交任务，工作池可能已关闭\n")
-					goto CollectResults
-				}
-
-				submittedTasks++
+		offset := PageSize + i*PageSize
+		if offset < p.maxResults {
+			task := Task{
+				keyword: keyword,
+				offset:  offset,
+				baseURL: baseURL,
 			}
-		}
 
-		// 只有在有多个批次且不是最后一批时才等待
-		if batchSize < neededPages && end < neededPages {
-			select {
-			case <-time.After(50 * time.Millisecond):
-				// 继续执行
-			case <-ctx.Done():
-				// 上下文已取消，停止提交任务
+			if !pool.Submit(task) {
+				fmt.Printf("无法提交任务，工作池可能已关闭\n")
 				goto CollectResults
 			}
+
+			submittedTasks++
 		}
 	}
 
 CollectResults:
 	// 关闭任务提交通道
-	go p.workerPool.Close()
+	go pool.Close()
 
 	// 收集结果
 	resultCount := 0
@@ -731,7 +682,7 @@ CollectResults:
 	// 使用select非阻塞地收集结果和错误
 	for resultCount+errorCount < submittedTasks {
 		select {
-		case result, ok := <-p.workerPool.results:
+		case result, ok := <-pool.results:
 			if !ok {
 				// 结果通道已关闭
 				goto ProcessResults
@@ -739,7 +690,7 @@ CollectResults:
 			allResults = append(allResults, result.results...)
 			resultCount++
 
-		case err, ok := <-p.workerPool.errors:
+		case err, ok := <-pool.errors:
 			if !ok {
 				// 错误通道已关闭
 				goto ProcessResults
@@ -750,13 +701,13 @@ CollectResults:
 		case <-ctx.Done():
 			// 上下文超时，返回已收集的结果
 			results := p.convertResults(allResults, keyword)
-			
+
 			// 缓存结果（即使超时也缓存已获取的结果）
 			searchResultCache.Store(keyword, cachedResponse{
 				results:   results,
 				timestamp: time.Now(),
 			})
-			
+
 			return results, fmt.Errorf("搜索超时: %w", ctx.Err())
 		}
 	}
@@ -765,20 +716,20 @@ ProcessResults:
 	// 如果所有请求都失败且没有获得首页以外的结果，则返回错误
 	if submittedTasks > 0 && errorCount == submittedTasks && len(allResults) == len(firstPageResults) {
 		results := p.convertResults(allResults, keyword)
-		
+
 		// 缓存结果（即使有错误也缓存已获取的结果）
 		searchResultCache.Store(keyword, cachedResponse{
 			results:   results,
 			timestamp: time.Now(),
 		})
-		
+
 		return results, fmt.Errorf("所有后续页面请求失败: %v", lastError)
 	}
 
 	// 4. 去重和格式化结果
 	uniqueResults := p.deduplicateItems(allResults)
 	results := p.convertResults(uniqueResults, keyword)
-	
+
 	// 缓存结果
 	searchResultCache.Store(keyword, cachedResponse{
 		results:   results,
