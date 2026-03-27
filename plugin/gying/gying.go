@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"pansou/util/json"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/idna"
 
 	cloudscraper "github.com/Advik-B/cloudscraper/lib"
 )
@@ -542,7 +544,20 @@ func normalizeBaseURL(raw string) (string, error) {
 		return "", fmt.Errorf("站点地址不能包含路径")
 	}
 
-	return parsed.Scheme + "://" + parsed.Host, nil
+	asciiHost, err := idna.Lookup.ToASCII(parsed.Hostname())
+	if err != nil {
+		return "", fmt.Errorf("域名格式错误: %v", err)
+	}
+	if net.ParseIP(asciiHost) == nil && !strings.HasPrefix(strings.ToLower(asciiHost), "www.") && strings.Count(asciiHost, ".") == 1 {
+		asciiHost = "www." + asciiHost
+	}
+
+	host := asciiHost
+	if port := parsed.Port(); port != "" {
+		host = net.JoinHostPort(asciiHost, port)
+	}
+
+	return parsed.Scheme + "://" + host, nil
 }
 
 func (p *GyingPlugin) configPath() string {
