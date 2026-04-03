@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,7 +28,6 @@ import (
 	"pansou/util/json"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/idna"
 
 	cloudscraper "github.com/Advik-B/cloudscraper/lib"
 )
@@ -49,9 +47,46 @@ const (
 )
 
 var (
-	challengeJSONPattern = regexp.MustCompile(`const json=(\{.*?\});const jss=`)
-	searchDataPattern    = regexp.MustCompile(`_obj\.search=(\{.*?\});`)
+	challengeJSONPattern  = regexp.MustCompile(`const json=(\{.*?\});const jss=`)
+	searchDataPattern     = regexp.MustCompile(`_obj\.search=(\{.*?\});`)
+	accessCodeBlockRegex  = regexp.MustCompile(`[（(]\s*访问码[:：]\s*[^)）]+[)）]`)
+	yearSuffixRegex       = regexp.MustCompile(`[（(]\d{4}[)）]`)
+	baiduLinkRegex        = regexp.MustCompile(`https?://pan\.baidu\.com/s/[a-zA-Z0-9_-]+(?:\?pwd=[a-zA-Z0-9]{4})?`)
+	quarkLinkRegex        = regexp.MustCompile(`https?://pan\.quark\.cn/s/[a-zA-Z0-9]+`)
+	aliyunLinkRegex       = regexp.MustCompile(`https?://(?:www\.)?(?:alipan|aliyundrive)\.com/s/[a-zA-Z0-9]+`)
+	xunleiLinkRegex       = regexp.MustCompile(`https?://pan\.xunlei\.com/s/[a-zA-Z0-9]+(?:\?pwd=[a-zA-Z0-9]{4})?`)
+	tianyiLinkRegex       = regexp.MustCompile(`https?://cloud\.189\.cn/(?:t/|web/share\?code=)[a-zA-Z0-9]+`)
+	tianyiShareCodeRegex  = regexp.MustCompile(`(?i)sharecode=([a-zA-Z0-9]+)`)
+	tianyiCloudRegex      = regexp.MustCompile(`https?://(?:www\.)?tianyi\.cloud/[^\s<>"']+`)
+	ucLinkRegex           = regexp.MustCompile(`https?://drive\.uc\.cn/s/[a-zA-Z0-9]+(?:\?public=\d+)?`)
+	link123Regex          = regexp.MustCompile(`https?://(?:www\.)?123(?:684|685|865|912|pan|592)\.(?:com|cn)/s/[a-zA-Z0-9_-]+(?:\?pwd=[a-zA-Z0-9]{4,8})?`)
+	link115Regex          = regexp.MustCompile(`https?://(?:115\.com|115cdn\.com|anxia\.com)/s/[a-zA-Z0-9]+(?:\?password=[a-zA-Z0-9]{4,8})?`)
+	mobileYunLinkRegex    = regexp.MustCompile(`https?://yun\.139\.com/shareweb/#/w/i/[a-zA-Z0-9]+`)
+	mobileCaiyunLinkRegex = regexp.MustCompile(`https?://(?:www\.)?caiyun\.139\.com/(?:w/i/[a-zA-Z0-9]+|m/i\?[a-zA-Z0-9]+)[^\s<>"']*`)
+	mobileFeixinLinkRegex = regexp.MustCompile(`https?://caiyun\.feixin\.10086\.cn/[a-zA-Z0-9]+`)
+	exactPasswordRegex    = regexp.MustCompile(`(?i)^[a-zA-Z0-9]{4,8}$`)
+	magnetHashRegex       = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
 )
+
+var inlinePasswordPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)[?&]pwd=([a-zA-Z0-9]{4,8})`),
+	regexp.MustCompile(`(?i)[?&]password=([a-zA-Z0-9]{4,8})`),
+	regexp.MustCompile(`访问码[:：]\s*([a-zA-Z0-9]{4,8})`),
+	regexp.MustCompile(`提取码[:：]\s*([a-zA-Z0-9]{4,8})`),
+	regexp.MustCompile(`密码[:：]\s*([a-zA-Z0-9]{4,8})`),
+}
+
+var gyingPanTypeMap = map[int]string{
+	0: "xunlei",
+	1: "baidu",
+	2: "quark",
+	3: "tianyi",
+	4: "mobile",
+	5: "115",
+	6: "123",
+	7: "uc",
+	8: "aliyun",
+}
 
 var DefaultAccounts = []struct {
 	Username string
@@ -417,7 +452,11 @@ const HTMLTemplate = `<!DOCTYPE html>
                     html += '<p><strong>' + (index + 1) + '. ' + item.title + '</strong></p>';
                     item.links.forEach(link => {
                         html += '<p style="font-size: 12px; color: #666; margin: 5px 0; word-break: break-all;">';
-                        html += '[' + link.type + '] ' + link.url;
+                        html += '[' + link.type + '] ';
+                        if (link.work_title) {
+                            html += '<strong>' + link.work_title + '</strong><br>';
+                        }
+                        html += link.url;
                         if (link.password) html += ' 密码: ' + link.password;
                         html += '</p>';
                     });
@@ -478,8 +517,26 @@ type SearchData struct {
 
 // DetailData 详情接口JSON数据结构
 type DetailData struct {
-	Code    int  `json:"code"`
-	WP      bool `json:"wp"`
+	Code     int  `json:"code"`
+	WP       bool `json:"wp"`
+	Downlist struct {
+		IMDB string `json:"imdb"`
+		Type struct {
+			A []string `json:"a"`
+			B []string `json:"b"`
+		} `json:"type"`
+		Hex  string `json:"hex"`
+		List struct {
+			M []string `json:"m"` // 磁力hash
+			T []string `json:"t"` // 资源名称
+			S []string `json:"s"` // 文件大小
+			E []int    `json:"e"`
+			P []string `json:"p"` // 资源分组标识
+			U []string `json:"u"`
+			K []int    `json:"k"`
+			N []string `json:"n"` // 更新时间
+		} `json:"list"`
+	} `json:"downlist"`
 	Panlist struct {
 		ID    []string `json:"id"`
 		Name  []string `json:"name"`
@@ -544,20 +601,7 @@ func normalizeBaseURL(raw string) (string, error) {
 		return "", fmt.Errorf("站点地址不能包含路径")
 	}
 
-	asciiHost, err := idna.Lookup.ToASCII(parsed.Hostname())
-	if err != nil {
-		return "", fmt.Errorf("域名格式错误: %v", err)
-	}
-	if net.ParseIP(asciiHost) == nil && !strings.HasPrefix(strings.ToLower(asciiHost), "www.") && strings.Count(asciiHost, ".") == 1 {
-		asciiHost = "www." + asciiHost
-	}
-
-	host := asciiHost
-	if port := parsed.Port(); port != "" {
-		host = net.JoinHostPort(asciiHost, port)
-	}
-
-	return parsed.Scheme + "://" + host, nil
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func (p *GyingPlugin) configPath() string {
@@ -1256,9 +1300,10 @@ func (p *GyingPlugin) handleTestSearch(c *gin.Context, hash string, reqData map[
 		links := make([]gin.H, 0, len(r.Links))
 		for _, link := range r.Links {
 			links = append(links, gin.H{
-				"type":     link.Type,
-				"url":      link.URL,
-				"password": link.Password,
+				"type":       link.Type,
+				"url":        link.URL,
+				"password":   link.Password,
+				"work_title": link.WorkTitle,
 			})
 		}
 
@@ -2383,8 +2428,8 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 		contentParts = append(contentParts, fmt.Sprintf("主演: %s", searchData.L.Zhuyan[index]))
 	}
 
-	// 提取网盘链接
-	links := p.extractPanLinks(detail)
+	// 同时提取网盘和磁力链接
+	links := p.extractLinks(detail, title)
 
 	// 构建标签（保留年份标签，提供额外的过滤维度）
 	var tags []string
@@ -2401,12 +2446,13 @@ func (p *GyingPlugin) buildResult(detail *DetailData, searchData *SearchData, in
 		}
 		datetime = time.Now()
 	} else {
-		datetime = p.parseUpdateTime(detail.Panlist.Time)
+		detailTimes := p.collectDetailTimes(detail)
+		datetime = p.parseUpdateTime(detailTimes)
 		if DebugLog {
 			fmt.Printf("[Gying] buildResult时间解析: 时间数组长度=%d, 解析后时间=%v\n",
-				len(detail.Panlist.Time), datetime.Format("2006-01-02 15:04:05"))
-			if len(detail.Panlist.Time) > 0 {
-				fmt.Printf("[Gying]   前3个时间字符串: %v\n", detail.Panlist.Time[:min(3, len(detail.Panlist.Time))])
+				len(detailTimes), datetime.Format("2006-01-02 15:04:05"))
+			if len(detailTimes) > 0 {
+				fmt.Printf("[Gying]   前3个时间字符串: %v\n", detailTimes[:min(3, len(detailTimes))])
 			}
 		}
 	}
@@ -2526,109 +2572,352 @@ func (p *GyingPlugin) parseRelativeTime(timeStr string, baseTime time.Time) *tim
 	return nil
 }
 
+// collectDetailTimes 汇总详情里的所有时间字段，优先用于结果时间判断
+func (p *GyingPlugin) collectDetailTimes(detail *DetailData) []string {
+	if detail == nil {
+		return nil
+	}
+
+	times := make([]string, 0, len(detail.Panlist.Time)+len(detail.Downlist.List.N))
+	times = append(times, detail.Panlist.Time...)
+	times = append(times, detail.Downlist.List.N...)
+	return times
+}
+
+// extractLinks 提取详情中的所有链接
+func (p *GyingPlugin) extractLinks(detail *DetailData, resultTitle string) []model.Link {
+	if detail == nil {
+		return nil
+	}
+
+	now := time.Now()
+	seen := make(map[string]struct{})
+	links := make([]model.Link, 0, len(detail.Panlist.URL)+len(detail.Downlist.List.M))
+
+	links = append(links, p.extractPanLinks(detail, resultTitle, now, seen)...)
+	links = append(links, p.extractMagnetLinks(detail, resultTitle, now, seen)...)
+
+	return links
+}
+
 // extractPanLinks 提取网盘链接
-func (p *GyingPlugin) extractPanLinks(detail *DetailData) []model.Link {
-	var links []model.Link
-	seen := make(map[string]bool)
+func (p *GyingPlugin) extractPanLinks(detail *DetailData, resultTitle string, now time.Time, seen map[string]struct{}) []model.Link {
+	links := make([]model.Link, 0, len(detail.Panlist.URL))
 
 	for i := 0; i < len(detail.Panlist.URL); i++ {
-		linkURL := strings.TrimSpace(detail.Panlist.URL[i])
+		rawURL := p.safeString(detail.Panlist.URL, i)
+		typeCode := p.safeInt(detail.Panlist.Type, i, -1)
+		typeName := p.getPanTypeName(detail, typeCode)
 
-		// 去除URL中的访问码标记
-		linkURL = regexp.MustCompile(`（访问码：.*?）`).ReplaceAllString(linkURL, "")
-		linkURL = regexp.MustCompile(`\(访问码：.*?\)`).ReplaceAllString(linkURL, "")
-		linkURL = strings.TrimSpace(linkURL)
-
-		if linkURL == "" || seen[linkURL] {
-			continue
-		}
-		seen[linkURL] = true
-
-		// 识别网盘类型
-		linkType := p.determineLinkType(linkURL)
-		if linkType == "others" {
+		linkURL := p.normalizePanURL(rawURL, typeCode, typeName)
+		linkType := p.determineLinkType(linkURL, typeCode, typeName)
+		if linkURL == "" || linkType == "others" {
 			continue
 		}
 
-		// 提取提取码
-		password := ""
-		if i < len(detail.Panlist.P) && detail.Panlist.P[i] != "" {
-			password = detail.Panlist.P[i]
+		seenKey := linkType + ":" + strings.ToLower(linkURL)
+		if _, exists := seen[seenKey]; exists {
+			continue
 		}
+		seen[seenKey] = struct{}{}
 
-		// 从URL提取提取码（优先）
-		if urlPwd := p.extractPasswordFromURL(linkURL); urlPwd != "" {
-			password = urlPwd
-		}
-
-		// 解析对应的时间
-		var linkDatetime time.Time
-		if i < len(detail.Panlist.Time) && detail.Panlist.Time[i] != "" {
-			timeStr := detail.Panlist.Time[i]
-			parsedTime := p.parseRelativeTime(timeStr, time.Now())
-			if parsedTime != nil {
-				linkDatetime = *parsedTime
-			}
-			// 如果解析失败，保持为零值，合并逻辑会使用result.Datetime
-		}
-		// 如果没有时间信息，保持为零值，合并逻辑会使用result.Datetime
+		linkTime := p.parseLinkTime(p.safeString(detail.Panlist.Time, i), now)
+		resourceName := p.safeString(detail.Panlist.Name, i)
+		password := p.extractPassword(rawURL, p.safeString(detail.Panlist.P, i))
 
 		links = append(links, model.Link{
-			Type:     linkType,
-			URL:      linkURL,
-			Password: password,
-			Datetime: linkDatetime,
+			Type:      linkType,
+			URL:       linkURL,
+			Password:  password,
+			Datetime:  linkTime,
+			WorkTitle: p.buildLinkWorkTitle(resultTitle, resourceName),
 		})
 	}
 
 	return links
 }
 
-// determineLinkType 识别网盘类型
-func (p *GyingPlugin) determineLinkType(linkURL string) string {
+// extractMagnetLinks 从 downlist 手动拼接磁力链接
+func (p *GyingPlugin) extractMagnetLinks(detail *DetailData, resultTitle string, now time.Time, seen map[string]struct{}) []model.Link {
+	hashes := detail.Downlist.List.M
+	if len(hashes) == 0 {
+		return nil
+	}
+
+	links := make([]model.Link, 0, len(hashes))
+	for i := 0; i < len(hashes); i++ {
+		infoHash := strings.ToLower(strings.TrimSpace(hashes[i]))
+		if !magnetHashRegex.MatchString(infoHash) {
+			continue
+		}
+
+		seenKey := "magnet:" + infoHash
+		if _, exists := seen[seenKey]; exists {
+			continue
+		}
+		seen[seenKey] = struct{}{}
+
+		resourceName := p.safeString(detail.Downlist.List.T, i)
+		if resourceName == "" {
+			resourceName = p.safeString(detail.Downlist.List.S, i)
+		}
+
+		magnetURL := p.buildMagnetURL(infoHash, resourceName)
+		if magnetURL == "" {
+			continue
+		}
+
+		links = append(links, model.Link{
+			Type:      "magnet",
+			URL:       magnetURL,
+			Password:  "",
+			Datetime:  p.parseLinkTime(p.safeString(detail.Downlist.List.N, i), now),
+			WorkTitle: p.buildLinkWorkTitle(resultTitle, resourceName),
+		})
+	}
+
+	return links
+}
+
+func (p *GyingPlugin) getPanTypeName(detail *DetailData, typeCode int) string {
+	if detail == nil || typeCode < 0 || typeCode >= len(detail.Panlist.TName) {
+		return ""
+	}
+	return strings.TrimSpace(detail.Panlist.TName[typeCode])
+}
+
+// determineLinkType 识别链接类型，先看URL，再看类型编码和名称兜底
+func (p *GyingPlugin) determineLinkType(linkURL string, typeCode int, typeName string) string {
+	lowerURL := strings.ToLower(strings.TrimSpace(linkURL))
+	lowerTypeName := strings.ToLower(strings.TrimSpace(typeName))
+
 	switch {
-	case strings.Contains(linkURL, "pan.quark.cn"):
+	case strings.HasPrefix(lowerURL, "magnet:?xt=urn:btih:"):
+		return "magnet"
+	case strings.Contains(lowerURL, "pan.quark.cn"):
 		return "quark"
-	case strings.Contains(linkURL, "drive.uc.cn"):
+	case strings.Contains(lowerURL, "drive.uc.cn"):
 		return "uc"
-	case strings.Contains(linkURL, "pan.baidu.com"):
+	case strings.Contains(lowerURL, "pan.baidu.com"):
 		return "baidu"
-	case strings.Contains(linkURL, "aliyundrive.com") || strings.Contains(linkURL, "alipan.com"):
+	case strings.Contains(lowerURL, "aliyundrive.com") || strings.Contains(lowerURL, "alipan.com"):
 		return "aliyun"
-	case strings.Contains(linkURL, "pan.xunlei.com"):
+	case strings.Contains(lowerURL, "pan.xunlei.com"):
 		return "xunlei"
-	case strings.Contains(linkURL, "cloud.189.cn"):
+	case strings.Contains(lowerURL, "cloud.189.cn") || strings.Contains(lowerURL, "content.21cn.com") || strings.Contains(lowerURL, "tianyi.cloud"):
 		return "tianyi"
-	case strings.Contains(linkURL, "115.com") || strings.Contains(linkURL, "115cdn.com") || strings.Contains(linkURL, "anxia.com"):
+	case strings.Contains(lowerURL, "yun.139.com") || strings.Contains(lowerURL, "caiyun.139.com") || strings.Contains(lowerURL, "feixin.10086.cn"):
+		return "mobile"
+	case strings.Contains(lowerURL, "115.com") || strings.Contains(lowerURL, "115cdn.com") || strings.Contains(lowerURL, "anxia.com"):
 		return "115"
-	case strings.Contains(linkURL, "123684.com") || strings.Contains(linkURL, "123685.com") ||
-		strings.Contains(linkURL, "123912.com") || strings.Contains(linkURL, "123pan.com") ||
-		strings.Contains(linkURL, "123pan.cn") || strings.Contains(linkURL, "123592.com"):
+	case strings.Contains(lowerURL, "123684.com") || strings.Contains(lowerURL, "123685.com") ||
+		strings.Contains(lowerURL, "123865.com") || strings.Contains(lowerURL, "123912.com") ||
+		strings.Contains(lowerURL, "123pan.com") || strings.Contains(lowerURL, "123pan.cn") ||
+		strings.Contains(lowerURL, "123592.com"):
 		return "123"
+	}
+
+	if mappedType, ok := gyingPanTypeMap[typeCode]; ok {
+		return mappedType
+	}
+
+	switch {
+	case strings.Contains(lowerTypeName, "天翼"):
+		return "tianyi"
+	case strings.Contains(lowerTypeName, "移动") || strings.Contains(lowerTypeName, "彩云"):
+		return "mobile"
+	case strings.Contains(lowerTypeName, "百度"):
+		return "baidu"
+	case strings.Contains(lowerTypeName, "夸克"):
+		return "quark"
+	case strings.Contains(lowerTypeName, "迅雷"):
+		return "xunlei"
+	case strings.Contains(lowerTypeName, "阿里"):
+		return "aliyun"
+	case strings.Contains(lowerTypeName, "115"):
+		return "115"
+	case strings.Contains(lowerTypeName, "123"):
+		return "123"
+	case strings.Contains(lowerTypeName, "uc"):
+		return "uc"
 	default:
 		return "others"
 	}
 }
 
-// extractPasswordFromURL 从URL提取提取码
-func (p *GyingPlugin) extractPasswordFromURL(linkURL string) string {
-	// 百度网盘: ?pwd=xxxx
-	if strings.Contains(linkURL, "?pwd=") {
-		re := regexp.MustCompile("\\?pwd=([a-zA-Z0-9]+)")
-		if matches := re.FindStringSubmatch(linkURL); len(matches) > 1 {
-			return matches[1]
+func (p *GyingPlugin) normalizePanURL(rawURL string, typeCode int, typeName string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	rawURL = accessCodeBlockRegex.ReplaceAllString(rawURL, "")
+	rawURL = strings.TrimSpace(rawURL)
+
+	linkType := p.determineLinkType(rawURL, typeCode, typeName)
+
+	switch linkType {
+	case "baidu":
+		return baiduLinkRegex.FindString(rawURL)
+	case "quark":
+		return quarkLinkRegex.FindString(rawURL)
+	case "aliyun":
+		return aliyunLinkRegex.FindString(rawURL)
+	case "xunlei":
+		return xunleiLinkRegex.FindString(rawURL)
+	case "tianyi":
+		if code := p.extractTianyiShareCode(rawURL); code != "" {
+			return "https://cloud.189.cn/t/" + code
+		}
+		if match := tianyiLinkRegex.FindString(rawURL); match != "" {
+			return match
+		}
+		return tianyiCloudRegex.FindString(rawURL)
+	case "mobile":
+		if match := mobileYunLinkRegex.FindString(rawURL); match != "" {
+			return match
+		}
+		if match := mobileCaiyunLinkRegex.FindString(rawURL); match != "" {
+			return match
+		}
+		return mobileFeixinLinkRegex.FindString(rawURL)
+	case "115":
+		return link115Regex.FindString(rawURL)
+	case "123":
+		return link123Regex.FindString(rawURL)
+	case "uc":
+		return ucLinkRegex.FindString(rawURL)
+	default:
+		return ""
+	}
+}
+
+func (p *GyingPlugin) extractTianyiShareCode(rawURL string) string {
+	matches := tianyiShareCodeRegex.FindStringSubmatch(rawURL)
+	if len(matches) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(matches[1])
+}
+
+func (p *GyingPlugin) extractPassword(rawText, fallback string) string {
+	if password := p.extractPasswordFromText(rawText); password != "" {
+		return password
+	}
+	return p.normalizePassword(fallback)
+}
+
+// extractPasswordFromText 从URL或附带说明中提取提取码
+func (p *GyingPlugin) extractPasswordFromText(text string) string {
+	for _, pattern := range inlinePasswordPatterns {
+		if matches := pattern.FindStringSubmatch(text); len(matches) > 1 {
+			return p.normalizePassword(matches[1])
 		}
 	}
+	return ""
+}
 
-	// 115网盘: ?password=xxxx
-	if strings.Contains(linkURL, "?password=") {
-		re := regexp.MustCompile("\\?password=([a-zA-Z0-9]+)")
-		if matches := re.FindStringSubmatch(linkURL); len(matches) > 1 {
-			return matches[1]
+func (p *GyingPlugin) normalizePassword(raw string) string {
+	password := strings.TrimSpace(raw)
+	if password == "" {
+		return ""
+	}
+
+	password = strings.Trim(password, ".。!！,，;；:：#*· ")
+	lower := strings.ToLower(password)
+	if lower == "无提取码" || strings.Contains(lower, "无密码") || strings.Contains(password, "无需") {
+		return ""
+	}
+
+	if exactPasswordRegex.MatchString(password) {
+		return password
+	}
+
+	for _, pattern := range inlinePasswordPatterns {
+		if matches := pattern.FindStringSubmatch(password); len(matches) > 1 {
+			candidate := strings.TrimSpace(matches[1])
+			if exactPasswordRegex.MatchString(candidate) {
+				return candidate
+			}
 		}
 	}
 
 	return ""
+}
+
+func (p *GyingPlugin) buildMagnetURL(infoHash, resourceName string) string {
+	infoHash = strings.ToLower(strings.TrimSpace(infoHash))
+	if !magnetHashRegex.MatchString(infoHash) {
+		return ""
+	}
+
+	magnetURL := "magnet:?xt=urn:btih:" + infoHash
+	resourceName = strings.TrimSpace(resourceName)
+	if resourceName != "" {
+		magnetURL += "&dn=" + url.QueryEscape(resourceName)
+	}
+	return magnetURL
+}
+
+func (p *GyingPlugin) parseLinkTime(timeStr string, baseTime time.Time) time.Time {
+	if parsedTime := p.parseRelativeTime(timeStr, baseTime); parsedTime != nil {
+		return *parsedTime
+	}
+	return time.Time{}
+}
+
+func (p *GyingPlugin) buildLinkWorkTitle(resultTitle, resourceName string) string {
+	resultTitle = strings.TrimSpace(resultTitle)
+	resourceName = strings.TrimSpace(resourceName)
+
+	if resourceName == "" {
+		return resultTitle
+	}
+
+	resultKey := p.normalizeTitleForCompare(resultTitle)
+	resourceKey := p.normalizeTitleForCompare(resourceName)
+	if resultKey != "" && strings.Contains(resourceKey, resultKey) {
+		return resourceName
+	}
+
+	if resultTitle == "" {
+		return resourceName
+	}
+	return resultTitle + " - " + resourceName
+}
+
+func (p *GyingPlugin) normalizeTitleForCompare(title string) string {
+	title = yearSuffixRegex.ReplaceAllString(title, "")
+	title = strings.ToLower(strings.TrimSpace(title))
+
+	replacer := strings.NewReplacer(
+		" ", "",
+		"-", "",
+		"_", "",
+		".", "",
+		"：", "",
+		":", "",
+		"（", "",
+		"）", "",
+		"(", "",
+		")", "",
+		"【", "",
+		"】", "",
+		"[", "",
+		"]", "",
+		"/", "",
+	)
+	return replacer.Replace(title)
+}
+
+func (p *GyingPlugin) safeString(items []string, index int) string {
+	if index < 0 || index >= len(items) {
+		return ""
+	}
+	return strings.TrimSpace(items[index])
+}
+
+func (p *GyingPlugin) safeInt(items []int, index int, fallback int) int {
+	if index < 0 || index >= len(items) {
+		return fallback
+	}
+	return items[index]
 }
 
 // deduplicateResults 去重
