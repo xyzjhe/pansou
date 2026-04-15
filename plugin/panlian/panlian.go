@@ -1179,24 +1179,40 @@ func (p *PanlianPlugin) handleTestSearch(c *gin.Context, hash string, reqData ma
 		return
 	}
 
-	preview := make([]gin.H, 0, len(results))
+	frontendResults := make([]gin.H, 0, len(results))
+	totalLinks := 0
 	for _, result := range results {
-		firstLink := ""
-		if len(result.Links) > 0 {
-			firstLink = result.Links[0].URL
+		links := make([]gin.H, 0, len(result.Links))
+		for _, link := range result.Links {
+			links = append(links, gin.H{
+				"type":       link.Type,
+				"url":        link.URL,
+				"password":   link.Password,
+				"datetime":   formatTime(link.Datetime),
+				"work_title": link.WorkTitle,
+			})
 		}
-		preview = append(preview, gin.H{
+		totalLinks += len(result.Links)
+
+		frontendResults = append(frontendResults, gin.H{
+			"message_id": result.MessageID,
+			"unique_id":  result.UniqueID,
+			"channel":    result.Channel,
 			"title":      result.Title,
+			"content":    result.Content,
 			"datetime":   formatTime(result.Datetime),
-			"link_count": len(result.Links),
-			"first_link": firstLink,
 			"tags":       result.Tags,
+			"images":     result.Images,
+			"link_count": len(result.Links),
+			"links":      links,
 		})
 	}
 
-	respondSuccess(c, fmt.Sprintf("找到 %d 条结果", len(results)), gin.H{
-		"keyword": keyword,
-		"results": preview,
+	respondSuccess(c, fmt.Sprintf("找到 %d 条结果，共 %d 个链接", len(frontendResults), totalLinks), gin.H{
+		"keyword":       keyword,
+		"total_results": len(frontendResults),
+		"total_links":   totalLinks,
+		"results":       frontendResults,
 	})
 }
 
