@@ -70,6 +70,7 @@ import (
 	_ "pansou/plugin/nyaa"
 	_ "pansou/plugin/ouge"
 	_ "pansou/plugin/pan666"
+	_ "pansou/plugin/panlian"
 	_ "pansou/plugin/pansearch"
 	_ "pansou/plugin/panta"
 	_ "pansou/plugin/panwiki"
