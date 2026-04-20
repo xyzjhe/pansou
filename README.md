@@ -592,6 +592,135 @@ curl "http://localhost:8888/api/search?kw=唐朝诡事录&filter=%7B%22include%2
 }
 ```
 
+### 链接检测API
+
+检测指定网盘分享链接当前是否有效，适合前端结果页按需做可见项检测，也支持批量调试和服务端缓存复用。
+
+**接口地址**：`/api/check/links`  
+**请求方法**：`POST`  
+**Content-Type**：`application/json`  
+**是否需要认证**：取决于`AUTH_ENABLED`配置
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| items | object[] | 是 | 待检测链接数组，至少提供一项 |
+| items[].disk_type | string | 是 | 网盘类型，支持：baidu、aliyun、quark、tianyi、uc、mobile、115、xunlei、123 |
+| items[].url | string | 是 | 完整分享链接 |
+| items[].password | string | 否 | 提取码/密码，未拼接在链接中时可传 |
+| view_token | string | 否 | 视图标识，用于区分当前前端检测批次 |
+
+**请求示例**：
+
+```bash
+# 未启用认证
+curl -X POST http://localhost:8888/api/check/links \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "disk_type": "quark",
+        "url": "https://pan.quark.cn/s/abcdefg",
+        "password": "1234"
+      },
+      {
+        "disk_type": "xunlei",
+        "url": "https://pan.xunlei.com/s/abcdefg?pwd=1234"
+      },
+      {
+        "disk_type": "115",
+        "url": "https://115cdn.com/s/abcdefg?password=1234"
+      }
+    ],
+    "view_token": "quark-1710000000000"
+  }'
+
+# 启用认证时
+curl -X POST http://localhost:8888/api/check/links \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -d '{
+    "items": [
+      {
+        "disk_type": "baidu",
+        "url": "https://pan.baidu.com/s/1abcdef?pwd=1234"
+      }
+    ]
+  }'
+```
+
+**成功响应**：
+
+```json
+{
+  "results": [
+    {
+      "disk_type": "quark",
+      "url": "https://pan.quark.cn/s/abcdefg",
+      "normalized_url": "https://pan.quark.cn/s/abcdefg?pwd=1234",
+      "state": "ok",
+      "cache_hit": false,
+      "checked_at": 1710000000000,
+      "expires_at": 1710086400000,
+      "summary": "链接有效"
+    },
+    {
+      "disk_type": "xunlei",
+      "url": "https://pan.xunlei.com/s/abcdefg?pwd=1234",
+      "normalized_url": "https://pan.xunlei.com/s/abcdefg?pwd=1234",
+      "state": "bad",
+      "cache_hit": true,
+      "checked_at": 1710000100000,
+      "expires_at": 1710021700000,
+      "summary": "链接失效"
+    }
+  ]
+}
+```
+
+**状态说明**：
+
+- `ok`：链接有效
+- `bad`：链接失效
+- `locked`：需要提取码或密码错误
+- `unsupported`：当前平台暂不支持检测
+- `uncertain`：检测失败或结果不确定
+
+**字段说明**：
+
+- `results`: 检测结果数组
+- `results[].disk_type`: 网盘类型
+- `results[].url`: 原始传入链接
+- `results[].normalized_url`: 规范化后的链接
+- `results[].state`: 检测状态
+- `results[].cache_hit`: 是否命中服务端检测缓存
+- `results[].checked_at`: 最近一次检测时间戳（毫秒）
+- `results[].expires_at`: 当前缓存过期时间戳（毫秒）
+- `results[].summary`: 状态说明文本
+
+**错误响应**：
+
+```json
+// 请求参数无效
+{
+  "code": 400,
+  "message": "无效的检测请求: Key: 'CheckRequest.Items' Error:Field validation for 'Items' failed on the 'required' tag"
+}
+
+// items 为空
+{
+  "code": 400,
+  "message": "items不能为空"
+}
+
+// 未授权（启用认证但未提供Token）
+{
+  "error": "未授权：缺少认证令牌",
+  "code": "AUTH_TOKEN_MISSING"
+}
+```
+
 ### 健康检查
 
 检查API服务是否正常运行。
