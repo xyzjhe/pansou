@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"math/rand"
@@ -430,7 +431,7 @@ func (s *CheckService) checkTianyi(item model.CheckItem, normalized string) (mod
 	query.Set("shareCode", shareCodeParam)
 	targetURL.RawQuery = query.Encode()
 
-	body, _, err := s.doRequest(ctx, "GET", targetURL.String(), nil, map[string]string{
+	body, statusCode, err := s.doRequest(ctx, "GET", targetURL.String(), nil, map[string]string{
 		"referer":   referer,
 		"sign-type": "1",
 	})
@@ -438,27 +439,57 @@ func (s *CheckService) checkTianyi(item model.CheckItem, normalized string) (mod
 		return s.buildResult(item, normalized, checkStateUncertain, false, "请求失败"), err
 	}
 
-	var response struct {
-		ResCode        int    `json:"res_code"`
-		ResMessage     string `json:"res_message"`
-		NeedAccessCode int    `json:"needAccessCode"`
-		ShareID        int64  `json:"shareId"`
+	bodyText := strings.TrimSpace(string(body))
+
+	var shareResponse struct {
+		XMLName        xml.Name `xml:"shareVO"`
+		NeedAccessCode int      `xml:"needAccessCode"`
+		ShareID        int64    `xml:"shareId"`
+		FileName       string   `xml:"fileName"`
+		AccessCode     string   `xml:"accessCode"`
 	}
-	_ = json.Unmarshal(body, &response)
+	if err := xml.Unmarshal(body, &shareResponse); err == nil && shareResponse.XMLName.Local == "shareVO" {
+		switch {
+		case shareResponse.ShareID > 0:
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		case shareResponse.FileName != "":
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		case shareResponse.NeedAccessCode == 1:
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		}
+	}
+
+	var errorResponse struct {
+		XMLName xml.Name `xml:"error"`
+		Code    string   `xml:"code"`
+		Message string   `xml:"message"`
+	}
+	if err := xml.Unmarshal(body, &errorResponse); err == nil && errorResponse.XMLName.Local == "error" {
+		message := coalesce(errorResponse.Message, errorResponse.Code)
+		messageLower := strings.ToLower(message)
+
+		switch {
+		case containsAny(messageLower, []string{"accesscode", "访问码", "提取码", "密码"}):
+			return s.buildResult(item, normalized, checkStateLocked, false, message), nil
+		case containsAny(messageLower, []string{"shareinfonotfound", "sharenotfound", "filenotfound", "shareexpirederror", "shareauditnotpass", "不存在", "失效", "取消", "过期"}):
+			return s.buildResult(item, normalized, checkStateBad, false, message), nil
+		}
+		return s.buildResult(item, normalized, checkStateBad, false, message), nil
+	}
 
 	switch {
-	case response.ShareID > 0:
-		return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
-	case response.NeedAccessCode == 1:
+	case statusCode == http.StatusOK && strings.Contains(bodyText, "<shareVO>"):
+		if strings.Contains(bodyText, "<shareId>") || strings.Contains(bodyText, "<fileName>") {
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		}
+		if strings.Contains(bodyText, "<needAccessCode>1</needAccessCode>") {
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		}
+		return s.buildResult(item, normalized, checkStateUncertain, false, "无法确认链接状态"), nil
+	case containsAny(strings.ToLower(bodyText), []string{"erroraccesscode", "needaccesscode", "访问码", "提取码", "密码"}):
 		return s.buildResult(item, normalized, checkStateLocked, false, "需要访问码"), nil
-	case response.ResMessage != "":
-		if containsAny(strings.ToLower(response.ResMessage), []string{"访问码", "提取码", "密码"}) {
-			return s.buildResult(item, normalized, checkStateLocked, false, response.ResMessage), nil
-		}
-		if containsAny(strings.ToLower(response.ResMessage), []string{"不存在", "失效", "取消", "过期"}) {
-			return s.buildResult(item, normalized, checkStateBad, false, response.ResMessage), nil
-		}
-		return s.buildResult(item, normalized, checkStateBad, false, response.ResMessage), nil
+	case containsAny(strings.ToLower(bodyText), []string{"shareinfonotfound", "sharenotfound", "filenotfound", "shareexpirederror", "shareauditnotpass", "不存在", "失效", "取消", "过期"}):
+		return s.buildResult(item, normalized, checkStateBad, false, "链接失效"), nil
 	default:
 		return s.buildResult(item, normalized, checkStateUncertain, false, "无法确认链接状态"), nil
 	}
