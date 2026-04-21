@@ -7,7 +7,7 @@ import (
 )
 
 // 通用网盘链接匹配正则表达式 - 修改为更精确的匹配模式
-var AllPanLinksPattern = regexp.MustCompile(`(?i)(?:(?:magnet:\?xt=urn:btih:[a-zA-Z0-9]+)|(?:ed2k://\|file\|[^|]+\|\d+\|[A-Fa-f0-9]+\|/?)|(?:https?://(?:(?:[\w.-]+\.)?(?:pan\.(?:baidu|quark)\.cn|(?:www\.)?(?:alipan|aliyundrive)\.com|drive\.uc\.cn|cloud\.189\.cn|(?:www\.)?(?:yun|caiyun)\.139\.com|caiyun\.feixin\.10086\.cn|(?:www\.)?123(?:684|685|912|pan|592)\.(?:com|cn)|115\.com|115cdn\.com|anxia\.com|pan\.xunlei\.com|mypikpak\.com))(?:/[^\s'"<>()]*)?))`)
+var AllPanLinksPattern = regexp.MustCompile(`(?i)(?:(?:magnet:\?xt=urn:btih:[a-zA-Z0-9]+)|(?:ed2k://\|file\|[^|]+\|\d+\|[A-Fa-f0-9]+\|/?)|(?:https?://(?:(?:[\w.-]+\.)?(?:pan\.(?:baidu|quark)\.cn|(?:www\.)?(?:alipan|aliyundrive)\.com|drive\.uc\.cn|cloud\.189\.cn|(?:www\.)?(?:yun|caiyun)\.139\.com|caiyun\.feixin\.10086\.cn|(?:www\.)?123(?:684|685|912|pan|592)\.(?:com|cn)|115\.com|115cdn\.com|anxia\.com|pan\.xunlei\.com|mypikpak\.com|guangyapan\.com))(?:/[^\s'"<>()]*)?))`)
 
 // 单独定义各种网盘的链接匹配模式，以便更精确地提取
 // 修改百度网盘链接正则表达式，确保只匹配到链接本身，不包含后面的文本
@@ -29,6 +29,9 @@ var Pan115Pattern = regexp.MustCompile(`https?://(?:115\.com|115cdn\.com|anxia\.
 
 // 添加阿里云盘链接正则表达式
 var AliyunPanPattern = regexp.MustCompile(`https?://(?:www\.)?(?:alipan|aliyundrive)\.com/s/[a-zA-Z0-9]+`)
+
+// 添加光鸭云盘链接正则表达式
+var GuangyaPanPattern = regexp.MustCompile(`https?://(?:www\.)?guangyapan\.com/s/[a-zA-Z0-9_-]+`)
 
 // 添加移动云盘链接正则表达式，兼容 yun.139.com/shareweb/#/w/i/... 与 caiyun.139.com 常见分享格式
 var MobilePanPattern = regexp.MustCompile(`https?://(?:(?:www\.)?yun\.139\.com/shareweb/#/w/i/[a-zA-Z0-9]+|(?:www\.)?caiyun\.139\.com/(?:w/i/[a-zA-Z0-9]+|m/i\?[a-zA-Z0-9]+)[^\s<>"']*|caiyun\.feixin\.10086\.cn/[a-zA-Z0-9]+)`)
@@ -70,6 +73,9 @@ func GetLinkType(url string) string {
 	}
 	if strings.Contains(url, "alipan.com") || strings.Contains(url, "aliyundrive.com") {
 		return "aliyun"
+	}
+	if strings.Contains(url, "guangyapan.com") {
+		return "guangya"
 	}
 	if strings.Contains(url, "cloud.189.cn") {
 		return "tianyi"
@@ -760,6 +766,33 @@ func ExtractNetDiskLinks(text string) []string {
 		}
 	}
 
+	// 提取光鸭云盘链接
+	guangyaMatches := GuangyaPanPattern.FindAllString(text, -1)
+	if guangyaMatches != nil {
+		for _, match := range guangyaMatches {
+			cleanURL := strings.TrimSpace(match)
+			if strings.HasSuffix(cleanURL, "https") {
+				cleanURL = cleanURL[:len(cleanURL)-5]
+			}
+			if cleanURL != "" {
+				isDuplicate := false
+				for _, existingLink := range links {
+					normalizedExisting := normalizeURLForComparison(existingLink)
+					normalizedNew := normalizeURLForComparison(cleanURL)
+
+					if normalizedExisting == normalizedNew {
+						isDuplicate = true
+						break
+					}
+				}
+
+				if !isDuplicate {
+					links = append(links, cleanURL)
+				}
+			}
+		}
+	}
+
 	// 提取移动云盘链接
 	mobileMatches := MobilePanPattern.FindAllString(text, -1)
 	if mobileMatches != nil {
@@ -849,6 +882,7 @@ func ExtractNetDiskLinks(text string) []string {
 			if strings.Contains(cleanURL, "pan.baidu.com") ||
 				strings.Contains(cleanURL, "pan.quark.cn") ||
 				strings.Contains(cleanURL, "pan.xunlei.com") ||
+				strings.Contains(cleanURL, "guangyapan.com") ||
 				strings.Contains(cleanURL, "cloud.189.cn") ||
 				strings.Contains(cleanURL, "drive.uc.cn") ||
 				strings.Contains(cleanURL, "yun.139.com") ||

@@ -111,6 +111,7 @@ import (
 	_ "pansou/plugin/jupansou"
 	_ "pansou/plugin/lingjisp"
 	_ "pansou/plugin/quarktv"
+	_ "pansou/plugin/panzun"
 )
 
 // 全局缓存写入管理器

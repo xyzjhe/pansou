@@ -44,6 +44,11 @@ func isSupportedLink(url string) bool {
 		return true
 	}
 
+	// 检查是否为光鸭云盘链接
+	if GuangyaPanPattern.MatchString(lowerURL) {
+		return true
+	}
+
 	// 检查是否为夸克网盘链接
 	if QuarkPanPattern.MatchString(lowerURL) {
 		return true

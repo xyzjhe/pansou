@@ -938,6 +938,9 @@ func isLinkPrefix(text string) bool {
 		// 阿里云盘
 		"阿里", "阿里云", "阿里云盘", "aliyun", "alipan", "阿里网盘",
 
+		// 光鸭云盘
+		"光鸭", "光鸭云盘", "光鸭网盘", "guangya",
+
 		// 天翼云盘
 		"天翼", "天翼云", "天翼云盘", "tianyi", "天翼网盘",
 
