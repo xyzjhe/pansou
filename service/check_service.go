@@ -6,7 +6,7 @@ import (
 	"compress/zlib"
 	"context"
 	"crypto/md5"
-	"encoding/json"
+	"encoding/gob"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -20,7 +20,10 @@ import (
 	"sync"
 	"time"
 
+	bolt "go.etcd.io/bbolt"
+
 	"pansou/model"
+	utiljson "pansou/util/json"
 	"pansou/util"
 )
 
@@ -30,6 +33,7 @@ const (
 	checkStateLocked      = "locked"
 	checkStateUnsupported = "unsupported"
 	checkStateUncertain   = "uncertain"
+	checkCacheBucketName  = "check_results"
 )
 
 type cachedCheckResult struct {
@@ -43,12 +47,18 @@ type activeCheckCall struct {
 	err    error
 }
 
+type cachedCheckDiskEntry struct {
+	Result    model.CheckResult
+	ExpiresAt int64
+}
+
 type CheckService struct {
 	mu        sync.Mutex
 	cache     map[string]cachedCheckResult
 	inflight  map[string]*activeCheckCall
 	client    *http.Client
 	cacheFile string
+	cacheDB   *bolt.DB
 }
 
 func NewCheckService() *CheckService {
@@ -56,9 +66,10 @@ func NewCheckService() *CheckService {
 		cache:     make(map[string]cachedCheckResult),
 		inflight:  make(map[string]*activeCheckCall),
 		client:    util.GetHTTPClient(),
-		cacheFile: filepath.Join(".", "cache", "check_cache.json"),
+		cacheFile: filepath.Join(".", "cache", "check_cache.db"),
 	}
-	service.loadCacheFromDisk()
+	service.openCacheStore()
+	service.pruneExpiredCacheStore()
 	return service
 }
 
@@ -109,17 +120,34 @@ func (s *CheckService) checkOne(item model.CheckItem) model.CheckResult {
 
 func (s *CheckService) getCached(key string) (model.CheckResult, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	entry, ok := s.cache[key]
+	if ok {
+		if time.Now().After(entry.expiresAt) {
+			delete(s.cache, key)
+			s.mu.Unlock()
+			s.deletePersistentCache(key)
+			return model.CheckResult{}, false
+		}
+
+		result := entry.result
+		s.mu.Unlock()
+		return result, true
+	}
+	s.mu.Unlock()
+
+	entry, ok = s.loadPersistentCache(key)
 	if !ok {
 		return model.CheckResult{}, false
 	}
 
 	if time.Now().After(entry.expiresAt) {
-		delete(s.cache, key)
+		s.deletePersistentCache(key)
 		return model.CheckResult{}, false
 	}
+
+	s.mu.Lock()
+	s.cache[key] = entry
+	s.mu.Unlock()
 
 	return entry.result, true
 }
@@ -140,22 +168,26 @@ func (s *CheckService) acquireInflight(key string) (*activeCheckCall, bool) {
 }
 
 func (s *CheckService) finishInflight(key string, call *activeCheckCall, result model.CheckResult, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	var entry cachedCheckResult
 	call.result = result
 	call.err = err
 
+	s.mu.Lock()
 	if err == nil {
-		s.cache[key] = cachedCheckResult{
+		entry = cachedCheckResult{
 			result:    result,
 			expiresAt: time.UnixMilli(result.ExpiresAt),
 		}
-		s.saveCacheToDiskLocked()
+		s.cache[key] = entry
 	}
 
 	delete(s.inflight, key)
 	close(call.done)
+	s.mu.Unlock()
+
+	if err == nil {
+		s.savePersistentCache(key, entry)
+	}
 }
 
 func (s *CheckService) runCheck(item model.CheckItem, normalized string) (model.CheckResult, error) {
@@ -210,7 +242,7 @@ func (s *CheckService) checkAliyun(item model.CheckItem, normalized string) (mod
 		Code       string `json:"code"`
 		Message    string `json:"message"`
 	}
-	_ = json.Unmarshal(body, &parsed)
+	_ = utiljson.Unmarshal(body, &parsed)
 
 	switch {
 	case statusCode == http.StatusOK && (parsed.ShareName != "" || parsed.ShareTitle != ""):
@@ -251,7 +283,7 @@ func (s *CheckService) checkQuark(item model.CheckItem, normalized string) (mode
 			Stoken string `json:"stoken"`
 		} `json:"data"`
 	}
-	_ = json.Unmarshal(tokenBody, &tokenResp)
+	_ = utiljson.Unmarshal(tokenBody, &tokenResp)
 
 	switch tokenResp.Code {
 	case 0:
@@ -287,10 +319,10 @@ func (s *CheckService) checkQuark(item model.CheckItem, normalized string) (mode
 	var detailResp struct {
 		Code int `json:"code"`
 		Data struct {
-			List []json.RawMessage `json:"list"`
+			List []any `json:"list"`
 		} `json:"data"`
 	}
-	_ = json.Unmarshal(detailBody, &detailResp)
+	_ = utiljson.Unmarshal(detailBody, &detailResp)
 
 	if detailResp.Code == 0 && len(detailResp.Data.List) > 0 {
 		return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
@@ -356,7 +388,7 @@ func (s *CheckService) checkBaidu(item model.CheckItem, normalized string) (mode
 			Errmsg string `json:"errmsg"`
 			Randsk string `json:"randsk"`
 		}
-		_ = json.Unmarshal(body, &verifyResp)
+		_ = utiljson.Unmarshal(body, &verifyResp)
 
 		switch verifyResp.Errno {
 		case 0:
@@ -388,7 +420,7 @@ func (s *CheckService) checkBaidu(item model.CheckItem, normalized string) (mode
 		Errmsg string `json:"errmsg"`
 		List   []any  `json:"list"`
 	}
-	_ = json.Unmarshal(body, &listResp)
+	_ = utiljson.Unmarshal(body, &listResp)
 
 	switch listResp.Errno {
 	case 0:
@@ -521,7 +553,7 @@ func (s *CheckService) check123(item model.CheckItem, normalized string) (model.
 		} `json:"data"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err := utiljson.Unmarshal(body, &response); err != nil {
 		return s.buildResult(item, normalized, checkStateUncertain, false, "响应解析失败"), nil
 	}
 
@@ -587,7 +619,7 @@ func (s *CheckService) checkXunlei(item model.CheckItem, normalized string) (mod
 		ShareStatus     string `json:"share_status"`
 		ShareStatusText string `json:"share_status_text"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err := utiljson.Unmarshal(body, &response); err != nil {
 		return s.buildResult(item, normalized, checkStateUncertain, false, "响应解析失败"), nil
 	}
 
@@ -664,7 +696,7 @@ func (s *CheckService) check115(item model.CheckItem, normalized string) (model.
 			} `json:"shareinfo"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err := utiljson.Unmarshal(body, &response); err != nil {
 		return s.buildResult(item, normalized, checkStateUncertain, false, "响应解析失败"), nil
 	}
 
@@ -735,7 +767,7 @@ func (s *CheckService) checkMobile(item model.CheckItem, normalized string) (mod
 		return s.buildResult(item, normalized, checkStateUncertain, false, "请求加密失败"), err
 	}
 
-	requestBody, err := json.Marshal(encrypted)
+	requestBody, err := utiljson.Marshal(encrypted)
 	if err != nil {
 		return s.buildResult(item, normalized, checkStateUncertain, false, "请求序列化失败"), err
 	}
@@ -756,7 +788,7 @@ func (s *CheckService) checkMobile(item model.CheckItem, normalized string) (mod
 	}
 
 	var response map[string]any
-	if err := json.Unmarshal([]byte(decrypted), &response); err != nil {
+	if err := utiljson.Unmarshal([]byte(decrypted), &response); err != nil {
 		return s.buildResult(item, normalized, checkStateUncertain, false, "响应解析失败"), nil
 	}
 
@@ -784,7 +816,7 @@ func (s *CheckService) checkMobile(item model.CheckItem, normalized string) (mod
 func (s *CheckService) doJSONRequest(ctx context.Context, method, targetURL string, payload any, headers map[string]string) ([]byte, int, error) {
 	var reader io.Reader
 	if payload != nil {
-		raw, err := json.Marshal(payload)
+		raw, err := utiljson.Marshal(payload)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -865,7 +897,7 @@ func (s *CheckService) fetchXunleiCaptchaToken(ctx context.Context) (string, err
 		CaptchaToken string `json:"captcha_token"`
 		URL          string `json:"url"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err := utiljson.Unmarshal(body, &response); err != nil {
 		return "", err
 	}
 	if response.URL != "" {
@@ -933,26 +965,7 @@ func ttlForState(state string) time.Duration {
 	}
 }
 
-func (s *CheckService) loadCacheFromDisk() {
-	raw, err := os.ReadFile(s.cacheFile)
-	if err != nil {
-		return
-	}
-
-	var data map[string]cachedCheckResult
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return
-	}
-
-	now := time.Now()
-	for key, entry := range data {
-		if now.Before(entry.expiresAt) {
-			s.cache[key] = entry
-		}
-	}
-}
-
-func (s *CheckService) saveCacheToDiskLocked() {
+func (s *CheckService) openCacheStore() {
 	if s.cacheFile == "" {
 		return
 	}
@@ -961,12 +974,143 @@ func (s *CheckService) saveCacheToDiskLocked() {
 		return
 	}
 
-	raw, err := json.Marshal(s.cache)
+	db, err := bolt.Open(s.cacheFile, 0o600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
 		return
 	}
 
-	_ = os.WriteFile(s.cacheFile, raw, 0o644)
+	if err := db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(checkCacheBucketName))
+		return err
+	}); err != nil {
+		_ = db.Close()
+		return
+	}
+
+	s.cacheDB = db
+}
+
+func encodeCachedCheckEntry(entry cachedCheckResult) ([]byte, error) {
+	payload := cachedCheckDiskEntry{
+		Result:    entry.result,
+		ExpiresAt: entry.expiresAt.UnixMilli(),
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(payload); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func decodeCachedCheckEntry(raw []byte) (cachedCheckResult, error) {
+	var payload cachedCheckDiskEntry
+	if err := gob.NewDecoder(bytes.NewReader(raw)).Decode(&payload); err != nil {
+		return cachedCheckResult{}, err
+	}
+
+	return cachedCheckResult{
+		result:    payload.Result,
+		expiresAt: time.UnixMilli(payload.ExpiresAt),
+	}, nil
+}
+
+func (s *CheckService) loadPersistentCache(key string) (cachedCheckResult, bool) {
+	if s.cacheDB == nil {
+		return cachedCheckResult{}, false
+	}
+
+	var entry cachedCheckResult
+	var found bool
+	_ = s.cacheDB.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(checkCacheBucketName))
+		if bucket == nil {
+			return nil
+		}
+
+		raw := bucket.Get([]byte(key))
+		if len(raw) == 0 {
+			return nil
+		}
+
+		decoded, err := decodeCachedCheckEntry(raw)
+		if err != nil {
+			return nil
+		}
+
+		entry = decoded
+		found = true
+		return nil
+	})
+
+	return entry, found
+}
+
+func (s *CheckService) savePersistentCache(key string, entry cachedCheckResult) {
+	if s.cacheDB == nil {
+		return
+	}
+
+	raw, err := encodeCachedCheckEntry(entry)
+	if err != nil {
+		return
+	}
+
+	_ = s.cacheDB.Batch(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(checkCacheBucketName))
+		if bucket == nil {
+			return nil
+		}
+		return bucket.Put([]byte(key), raw)
+	})
+}
+
+func (s *CheckService) deletePersistentCache(key string) {
+	if s.cacheDB == nil {
+		return
+	}
+
+	_ = s.cacheDB.Batch(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(checkCacheBucketName))
+		if bucket == nil {
+			return nil
+		}
+		return bucket.Delete([]byte(key))
+	})
+}
+
+func (s *CheckService) pruneExpiredCacheStore() {
+	if s.cacheDB == nil {
+		return
+	}
+
+	now := time.Now()
+	_ = s.cacheDB.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(checkCacheBucketName))
+		if bucket == nil {
+			return nil
+		}
+
+		var staleKeys [][]byte
+		_ = bucket.ForEach(func(key, value []byte) error {
+			entry, err := decodeCachedCheckEntry(value)
+			if err != nil || now.After(entry.expiresAt) {
+				keyCopy := make([]byte, len(key))
+				copy(keyCopy, key)
+				staleKeys = append(staleKeys, keyCopy)
+			}
+			return nil
+		})
+
+		for _, key := range staleKeys {
+			if err := bucket.Delete(key); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func buildXunleiCaptchaSignature(clientID, clientVersion, packageName, deviceID string) (string, string) {
