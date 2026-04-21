@@ -689,8 +689,12 @@ func (s *CheckService) check115(item model.CheckItem, normalized string) (model.
 		Error string `json:"error"`
 		Errno int    `json:"errno"`
 		Data  struct {
+			List       []any `json:"list"`
+			Count      int   `json:"count"`
 			ShareState int `json:"share_state"`
 			ShareInfo  struct {
+				SnapID       string `json:"snap_id"`
+				ShareTitle   string `json:"share_title"`
 				ShareState   int    `json:"share_state"`
 				ForbidReason string `json:"forbid_reason"`
 			} `json:"shareinfo"`
@@ -701,6 +705,10 @@ func (s *CheckService) check115(item model.CheckItem, normalized string) (model.
 	}
 
 	if response.State && response.Errno == 0 {
+		if len(response.Data.List) > 0 || response.Data.Count > 0 || response.Data.ShareInfo.SnapID != "" || response.Data.ShareInfo.ShareTitle != "" {
+			return s.buildResult(item, normalized, checkStateOK, false, "链接有效"), nil
+		}
+
 		shareState := response.Data.ShareState
 		if shareState == 0 {
 			shareState = response.Data.ShareInfo.ShareState
