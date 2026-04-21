@@ -56,7 +56,7 @@ func NewCheckService() *CheckService {
 		cache:     make(map[string]cachedCheckResult),
 		inflight:  make(map[string]*activeCheckCall),
 		client:    util.GetHTTPClient(),
-		cacheFile: filepath.Join(os.TempDir(), "pansou_check_cache.json"),
+		cacheFile: filepath.Join(".", "cache", "check_cache.json"),
 	}
 	service.loadCacheFromDisk()
 	return service
